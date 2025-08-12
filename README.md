@@ -1,4 +1,3 @@
-````markdown
 # Chessizen Backend
 
 [![NestJS](https://img.shields.io/badge/NestJS-E0234E?style=for-the-badge&logo=nestjs&logoColor=white)](https://nestjs.com/)
@@ -32,7 +31,6 @@ graph TD
     D -->|Game State| B
     E -->|AI Suggestions| B
 ```
-````
 
 ---
 

@@ -10,7 +10,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { logger });
 
   app.enableShutdownHooks();
-  logger.log('Starting Alimana backend application...');
+  logger.log('Starting Chessitizen backend application...');
 
   //Register the global exception filter
   app.useGlobalFilters(new AllExceptionsFilter(logger));

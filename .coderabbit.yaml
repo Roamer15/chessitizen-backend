@@ -1,0 +1,169 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+language: en-US
+early_access: false
+enable_free_tier: true
+
+# Knowledge base settings for learning from project patterns
+knowledge_base:
+  opt_out: false
+  web_search:
+    enabled: true
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "**/*.ts"
+      - "**/*.js"
+      - "**/*.json"
+      - "**/*.md"
+  learnings:
+    scope: auto
+  issues:
+    scope: auto
+  pull_requests:
+    scope: auto
+
+# Educational tone - explain WHY, not just WHAT
+tone_instructions: |
+  Senior Softwate engineer and mentor to students. Explain WHY patterns are better, provide learning context, reference best practices, be encouraging while maintaining quality standards. Guide to solutions, don't provide direct fixes.
+
+# Code generation settings - focused on documentation
+code_generation:
+  docstrings:
+    language: en-US
+    path_instructions:
+      - path: "src/**/*.ts"
+        instructions: "Document NestJS components: controllers, services, modules. Explain API endpoints, business logic, security considerations. Reference NestJS documentation patterns."
+
+      - path: "test/**/*.ts"
+        instructions: "Document test strategies: unit, integration, e2e. Explain test scenarios, mocking approaches, and coverage expectations."
+
+  unit_tests:
+    path_instructions:
+      - path: "src/**/*.spec.ts"
+        instructions: "Guide testing strategies: unit, integration, e2e. Explain mocking dependencies, test coverage importance. Reference NestJS testing docs."
+
+# Chat settings for student interaction
+chat:
+  auto_reply: true
+
+# Review profile - educational and thorough
+reviews:
+  profile: assertive # Changed from chill to be more thorough for learning
+  request_changes_workflow: true # Students should address feedback
+  high_level_summary: true
+  high_level_summary_placeholder: "@coderabbitai summary"
+  high_level_summary_in_walkthrough: true
+  auto_title_placeholder: "@coderabbitai"
+  auto_title_instructions: "Create titles focusing on API changes, architectural improvements, or backend functionality"
+  review_status: true
+  commit_status: true
+  fail_commit_status: true # Encourage addressing issues before merge
+  collapse_walkthrough: false # Keep detailed for learning
+  changed_files_summary: true
+
+  # Path-specific review instructions
+  path_instructions:
+    - path: "src/**/*.controller.ts"
+      instructions: "Review REST endpoints, DTOs, validation, error handling, status codes, auth guards. Explain API design principles and HTTP best practices."
+
+    - path: "src/**/*.service.ts"
+      instructions: "Review business logic separation, dependency injection, error handling, database interactions. Explain service layer architecture."
+
+    - path: "src/**/*.module.ts"
+      instructions: "Review module structure, providers, imports/exports, feature organization. Explain modular architecture and dependency management."
+
+    - path: "src/**/*.entity.ts"
+      instructions: "Review entity design, relationships, constraints, indexes, migrations. Explain database modeling and ORM best practices."
+
+    - path: "src/**/*.dto.ts"
+      instructions: "Review validation rules, transformations, serialization, API documentation. Explain data transfer object patterns."
+
+    - path: "src/**/*.guard.ts"
+      instructions: "Review authentication logic, authorization rules, security patterns. Explain guard implementation and security best practices."
+
+    - path: "src/**/*.interceptor.ts"
+      instructions: "Review request/response transformation, logging, caching, error handling. Explain interceptor patterns and cross-cutting concerns."
+
+    - path: "src/**/*.pipe.ts"
+      instructions: "Review data transformation, validation logic, error handling. Explain pipe patterns for data processing."
+
+    - path: "src/**/*.middleware.ts"
+      instructions: "Review request processing, logging, CORS, security headers. Explain middleware patterns and request lifecycle."
+
+    - path: "src/**/*.repository.ts"
+      instructions: "Review data access patterns, query optimization, error handling, transactions. Explain repository pattern benefits."
+
+    - path: "src/database/**/*.ts"
+      instructions: "Review migrations, seeds, configurations, connection management. Explain database setup and maintenance best practices."
+
+    - path: "src/config/**/*.ts"
+      instructions: "Review environment configuration, validation, security settings. Explain configuration management and environment separation."
+
+    - path: "**/*.spec.ts"
+      instructions: "Review test coverage, mocking strategies, assertion patterns, test organization. Explain testing best practices and TDD principles."
+
+    - path: "**/*.e2e-spec.ts"
+      instructions: "Review integration scenarios, API testing, authentication flows. Explain end-to-end testing strategies."
+
+    - path: "**/*.env*"
+      instructions: "Review environment variables, security (no secrets), naming conventions. Explain environment configuration security."
+
+    - path: "package.json"
+      instructions: "Review dependencies, scripts, security vulnerabilities, version constraints. Explain dependency management best practices."
+
+  # Educational labeling system
+  labeling_instructions:
+    - label: "api-design"
+      instructions: "Apply when API design patterns or REST principles are discussed"
+    - label: "security-review"
+      instructions: "Apply when authentication, authorization, or security practices are reviewed"
+    - label: "database-optimization"
+      instructions: "Apply when database queries, migrations, or data modeling improvements are suggested"
+    - label: "architecture-improvement"
+      instructions: "Apply when service architecture or module organization can be improved"
+    - label: "testing-enhancement"
+      instructions: "Apply when testing strategies or coverage improvements are needed"
+    - label: "performance-optimization"
+      instructions: "Apply when performance improvements in API responses or database queries are suggested"
+
+  # Filter paths that don't need review
+  path_filters:
+    - "!node_modules/**"
+    - "!dist/**"
+    - "!build/**"
+    - "!coverage/**"
+    - "!*.log"
+    - "!package-lock.json"
+    - "!yarn.lock"
+
+  # Auto review settings
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false # Only review when ready
+    base_branches:
+      - "main"
+      - "master"
+      - "development"
+    ignore_title_keywords:
+      - "wip"
+      - "draft"
+
+  # Educational finishing touches
+  finishing_touches:
+    docstrings:
+      enabled: true
+    unit_tests:
+      enabled: true
+
+  # Development tools integration
+  tools:
+    eslint:
+      enabled: true
+    actionlint:
+      enabled: true
+
+  # Additional educational features
+  sequence_diagrams: true
+  auto_apply_labels: true

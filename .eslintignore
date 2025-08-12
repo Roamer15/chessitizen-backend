@@ -1,0 +1,49 @@
+# Node.js
+node_modules/
+dist/
+build/
+coverage/
+
+# TypeScript
+*.tsbuildinfo
+
+# NestJS
+.env
+.env.*
+logs
+*.log
+
+# Tests
+test-results/
+tests/
+*.spec.ts
+*.test.ts
+
+# Compiled output
+*.js
+*.js.map
+*.d.ts
+
+# Misc
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDEs and Editors
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Scripts
+scripts/
+
+# Config files that shouldn’t be committed
+*.config.js
+*.config.cjs
+*.config.mjs
+
+# Optional: Ignore public assets if not used by backend
+public/

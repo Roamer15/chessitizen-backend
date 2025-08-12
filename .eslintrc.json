@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json.schemastore.org/eslintrc.json",
+  "env": {
+    "es2021": true,
+    "node": true
+  },
+  "extends": [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended",
+    "plugin:prettier/recommended"
+  ],
+  "plugins": ["@typescript-eslint", "unused-imports", "import", "prettier"],
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": 12,
+    "sourceType": "module"
+  },
+  "rules": {
+    // Warn when using console.log, console.error, etc.
+    "no-console": "warn",
+
+    // Warn if code style doesn't match Prettier formatting
+    "prettier/prettier": "warn",
+
+    // Disable the base ESLint unused vars rule (use TS version instead)
+    "no-unused-vars": "off",
+
+    // Disable unused-imports plugin's unused-vars rule (use TS version instead)
+    "unused-imports/no-unused-vars": "off",
+
+    // Warn if there are unused imports in a file
+    "unused-imports/no-unused-imports": "warn",
+
+    // Warn for unused variables, but allow variables starting with _ to be ignored
+    "@typescript-eslint/no-unused-vars": [
+      "warn",
+      {
+        "args": "after-used", // Only check arguments after the last used one
+        "ignoreRestSiblings": false, // Do not ignore unused siblings in rest patterns
+        "argsIgnorePattern": "^_.*?$" // Ignore arguments that start with an underscore
+      }
+    ],
+
+    // Warn if imports are not ordered according to the specified groups
+    "import/order": [
+      "warn",
+      {
+        "groups": [
+          "type", // Type imports (TypeScript)
+          "builtin", // Node.js built-ins (fs, path, etc.)
+          "object", // Imports of objects
+          "external", // Packages from node_modules
+          "internal", // Internal modules (e.g., src/)
+          "parent", // Imports from parent directories
+          "sibling", // Imports from sibling files
+          "index" // Imports from index files
+        ],
+        "newlines-between": "always" // Enforce a newline between each group
+      }
+    ],
+
+    // Enforce no spaces inside curly braces: {foo: bar}
+    "object-curly-spacing": ["error", "never"],
+
+    // Require semicolons at the end of statements
+    "semi": ["error", "always"],
+
+    // Enforce blank lines between certain statements for readability
+    "padding-line-between-statements": [
+      "warn",
+      {
+        "blankLine": "always", // Always add a blank line before return statements
+        "prev": "*",
+        "next": "return"
+      },
+      {
+        "blankLine": "always", // Always add a blank line after variable declarations
+        "prev": ["const", "let", "var"],
+        "next": "*"
+      },
+      {
+        "blankLine": "any", // No blank line required between consecutive variable declarations
+        "prev": ["const", "let", "var"],
+        "next": ["const", "let", "var"]
+      }
+    ]
+  }
+}

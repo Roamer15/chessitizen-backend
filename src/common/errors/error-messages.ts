@@ -36,4 +36,20 @@ export const ErrorMessages: Record<ErrorCode, { message: string; status: HttpSta
     message: 'Utilisateur non trouvé.',
     status: HttpStatus.NOT_FOUND,
   },
+  [ErrorCode.TOO_MANY_REQUESTS]: {
+    message: 'OTP limit reached.',
+    status: HttpStatus.TOO_MANY_REQUESTS,
+  },
+  [ErrorCode.INVALID_OTP]: {
+    message: 'Invalid OTP.',
+    status: HttpStatus.UNAUTHORIZED,
+  },
+  [ErrorCode.INVALID_CREDENTIALS]: {
+    message: 'Invalid email.',
+    status: HttpStatus.UNAUTHORIZED,
+  },
+  [ErrorCode.CACHE_ATTEMPT_FAILED]: {
+    message: 'Redis attempt failed.',
+    status: HttpStatus.CONFLICT,
+  },
 };

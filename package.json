@@ -20,6 +20,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@keyv/redis": "^5.1.0",
     "@nestjs/cache-manager": "^3.0.1",
     "@nestjs/common": "^11.1.6",
     "@nestjs/config": "^4.0.2",
@@ -31,6 +32,7 @@
     "@nestjs/platform-express": "^11.1.6",
     "@nestjs/websockets": "^11.1.6",
     "cache-manager": "^7.1.1",
+    "cache-manager-ioredis-yet": "^2.1.2",
     "cache-manager-redis-store": "^3.0.1",
     "chess.js": "^1.4.0",
     "class-transformer": "^0.5.1",
@@ -38,6 +40,7 @@
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.2.1",
     "joi": "^18.0.0",
+    "keyv": "^5.5.0",
     "mongoose": "^8.17.1",
     "nodemailer": "^7.0.5",
     "passport": "^0.7.0",

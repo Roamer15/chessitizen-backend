@@ -4,11 +4,10 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
-// import { LoggerModule } from './logger/logger.module';
-// import { UserModule } from './users/user.module';
-// import { RedisModule } from './shared/cache/redis.module';
-// import { AuthModule } from './modules/auth/auth.module';
-// import { AuthModule } from './modules/auth/auth.module';
+import { LoggerModule } from './logger/logger.module';
+import { UserModule } from './users/user.module';
+import { RedisModule } from './shared/cache/redis.module';
+import { AuthModule } from './modules/auth/auth.module';
 
 @Module({
   imports: [
@@ -24,10 +23,10 @@ import { MongooseModule } from '@nestjs/mongoose';
       }),
       inject: [ConfigService],
     }),
-    // AuthModule,
-    // RedisModule,
-    // LoggerModule,
-    // UserModule,
+    AuthModule,
+    RedisModule,
+    LoggerModule,
+    UserModule,
   ],
   controllers: [AppController],
   providers: [AppService],

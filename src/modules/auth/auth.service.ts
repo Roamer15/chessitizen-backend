@@ -33,7 +33,7 @@ export class AuthService {
 
     // Generate and store OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    await this.redis.setOtp(sendOtpDto.email, otp);
+    await this.redis.setOtp(sendOtpDto.email, otp, 300);
 
     // In production: Send via Twilio
     this.logger.log(`OTP for ${sendOtpDto.email}: ${otp}`);
@@ -43,6 +43,7 @@ export class AuthService {
   async verifyOtp(verifyOtpDto: VerifyOtpDto): Promise<{ access_token: string }> {
     const email = verifyOtpDto.email;
     const storedOtp = await this.redis.getOtp(email);
+    this.logger.log(`Stored OTP is: ${storedOtp}`);
     const otp = verifyOtpDto.otp;
     if (storedOtp !== otp) throwHttpError(ErrorCode.INVALID_OTP);
 

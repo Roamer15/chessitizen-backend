@@ -1,19 +1,15 @@
-// // src/redis/redis.service.ts
 // import { Inject, Injectable, Logger } from '@nestjs/common';
 // import { CACHE_MANAGER } from '@nestjs/cache-manager';
 // import { Cache } from 'cache-manager';
 // import { setTimeout } from 'timers/promises';
-// import { throwHttpError } from 'src/common/errors/http-exception.helper';
-// import { ErrorCode } from 'src/common/errors/error-codes.enum';
-
-// interface RedisStore extends Store {
-//   isCacheableValue: (value: any) => boolean;
-//   getClient: () => any;
-//   name: 'redis';
-// }
+// import { RedisClientType } from 'redis';
+// // import { throwHttpError } from 'src/common/errors/http-exception.helper';
+// // import { ErrorCode } from 'src/common/errors/error-codes.enum';
 
 // interface RedisCache extends Cache {
-//   store: RedisStore;
+//   store: {
+//     getClient: () => RedisClientType;
+//   };
 // }
 
 // @Injectable()
@@ -21,19 +17,21 @@
 //   private readonly logger = new Logger(RedisService.name);
 //   private readonly MAX_RETRIES = 3;
 //   private readonly RETRY_DELAY_MS = 100;
-//   private readonly redisCache: RedisCache;
 
-//   constructor(@Inject(CACHE_MANAGER) private readonly cache: Cache) {
-//     this.redisCache = cache as RedisCache;
-//   }
-
+//   constructor(@Inject(CACHE_MANAGER) private readonly cache: Cache) {}
 //   private isRedisStore(): boolean {
 //     return (
+//       this.cache &&
 //       'store' in this.cache &&
+//       this.cache.store !== null &&
 //       typeof this.cache.store === 'object' &&
-//       this.cache.store?.getClient !== undefined
+//       'getClient' in this.cache.store
 //     );
 //   }
+
+//   // private getClient() {
+//   //   return (this.cache as any).store.getClient();
+//   // }
 
 //   private async executeWithRetry<T>(operation: string, callback: () => Promise<T>): Promise<T> {
 //     let lastError: unknown;
@@ -58,32 +56,44 @@
 //         }
 //       }
 //     }
+
 //     const errorMessage = lastError instanceof Error ? lastError.message : 'Unknown error occurred';
 //     this.logger.error(`All retries failed for Redis operation: ${operation}`);
-//     throwHttpError(ErrorCode.CACHE_ATTEMPT_FAILED);
+
 //     throw new Error(`Redis operation failed after ${this.MAX_RETRIES} attempts: ${errorMessage}`);
+//     // throwHttpError(ErrorCode.CACHE_ATTEMPT_FAILED);
 //   }
 
+//   // private async redisSet<T>(key: string, value: T, ttl?: number): Promise<void> {
+//   //   console.log(key, value, ttl);
+//   //   // if (this.isRedisStore()) {
+//   //   const redisCache = this.cache as RedisCache;
+//   //   const client = redisCache.store.getClient();
+//   //   // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+//   //   await client.set(key, JSON.stringify(value), 'EX', ttl || 0);
+//   // }
+
 //   private async redisSet<T>(key: string, value: T, ttl?: number): Promise<void> {
-//     if (this.isRedisStore()) {
-//       // Direct Redis client access
-//       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-//       const client = (this.cache as any).store.getClient();
-//       // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-//       await client.set(key, JSON.stringify(value), 'EX', ttl || 0);
-//     } else {
-//       // Standard cache manager
-//       await this.cache.set(key, value, ttl as number);
-//     }
+//     console.log(key, value, ttl);
+//     const redisCache = this.cache as RedisCache;
+//     const client = redisCache.store.getClient();
+//     await client.set(key, JSON.stringify(value), { EX: ttl || 0 });
 //   }
+
 //   // OTP Operations
 //   async setOtp(email: string, otp: string, ttlSeconds = 300): Promise<void> {
-//     await this.redisSet(`otp:${email}`, otp, ttlSeconds);
-//     this.logger.debug(`OTP set for ${email} (TTL: ${ttlSeconds}s)`);
+//     console.log(email, otp);
+//     this.logger.log(`Setting OTP: ${otp} for email ${email}`);
+//     return this.executeWithRetry('setOtp', async () => {
+//       await this.redisSet(`otp:${email}`, otp, ttlSeconds);
+//       this.logger.debug(`OTP set for ${email} (TTL: ${ttlSeconds}s)`);
+//     });
 //   }
+
 //   async getOtp(email: string): Promise<string | undefined> {
 //     return this.executeWithRetry('getOtp', async () => {
 //       const result = await this.cache.get<string>(`otp:${email}`);
+//       this.logger.log(result);
 //       this.logger.debug(`OTP lookup for ${email}: ${result ? 'found' : 'missing'}`);
 //       return result;
 //     });
@@ -115,6 +125,15 @@
 //     });
 //   }
 
+//   async resetAttempts(key: string): Promise<void> {
+//     try {
+//       await this.cache.del(key);
+//     } catch (error) {
+//       console.error(`Error resetting attempts for key ${key}:`, error);
+//       throw error;
+//     }
+//   }
+
 //   // Generic Methods
 //   async set<T>(key: string, value: T, ttl?: number): Promise<void> {
 //     return this.executeWithRetry('set', async () => {
@@ -139,30 +158,20 @@
 //   }
 // }
 
-// src/redis/redis.service.ts
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Cache } from 'cache-manager';
 import { setTimeout } from 'timers/promises';
-import { throwHttpError } from 'src/common/errors/http-exception.helper';
-import { ErrorCode } from 'src/common/errors/error-codes.enum';
+import Keyv from 'keyv';
 
 @Injectable()
 export class RedisService {
   private readonly logger = new Logger(RedisService.name);
   private readonly MAX_RETRIES = 3;
-  private readonly RETRY_DELAY_MS = 100;
+  private readonly RETRY_DELAY_MS = 100; // ms
 
-  constructor(@Inject(CACHE_MANAGER) private readonly cache: Cache) {}
-  private isRedisStore(): boolean {
-    return (
-      this.cache &&
-      'store' in this.cache &&
-      this.cache.store !== null &&
-      typeof this.cache.store === 'object' &&
-      'getClient' in this.cache.store
-    );
-  }
+  constructor(
+    @Inject('REDIS_CLIENT')
+    private readonly redis: Keyv,
+  ) {}
 
   private async executeWithRetry<T>(operation: string, callback: () => Promise<T>): Promise<T> {
     let lastError: unknown;
@@ -190,23 +199,16 @@ export class RedisService {
 
     const errorMessage = lastError instanceof Error ? lastError.message : 'Unknown error occurred';
     this.logger.error(`All retries failed for Redis operation: ${operation}`);
-    throwHttpError(ErrorCode.CACHE_ATTEMPT_FAILED);
     throw new Error(`Redis operation failed after ${this.MAX_RETRIES} attempts: ${errorMessage}`);
   }
 
   private async redisSet<T>(key: string, value: T, ttl?: number): Promise<void> {
-    if (this.isRedisStore()) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-      const client = (this.cache as any).store.getClient();
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-      await client.set(key, JSON.stringify(value), 'EX', ttl || 0);
-    } else {
-      await this.cache.set(key, value, ttl as number);
-    }
+    await this.redis.set(key, value, ttl ? ttl * 1000 : undefined); // Keyv TTL is in ms
   }
 
   // OTP Operations
   async setOtp(email: string, otp: string, ttlSeconds = 300): Promise<void> {
+    this.logger.log(`Setting OTP: ${otp} for email ${email}`);
     return this.executeWithRetry('setOtp', async () => {
       await this.redisSet(`otp:${email}`, otp, ttlSeconds);
       this.logger.debug(`OTP set for ${email} (TTL: ${ttlSeconds}s)`);
@@ -215,15 +217,15 @@ export class RedisService {
 
   async getOtp(email: string): Promise<string | undefined> {
     return this.executeWithRetry('getOtp', async () => {
-      const result = await this.cache.get<string>(`otp:${email}`);
+      const result = await this.redis.get<string>(`otp:${email}`);
       this.logger.debug(`OTP lookup for ${email}: ${result ? 'found' : 'missing'}`);
-      return result;
+      return result ?? undefined;
     });
   }
 
   async deleteOtp(email: string): Promise<void> {
     return this.executeWithRetry('deleteOtp', async () => {
-      await this.cache.del(`otp:${email}`);
+      await this.redis.delete(`otp:${email}`);
       this.logger.debug(`OTP deleted for ${email}`);
     });
   }
@@ -240,7 +242,7 @@ export class RedisService {
 
   async getAttempts(key: string): Promise<number> {
     return this.executeWithRetry('getAttempts', async () => {
-      const cached = await this.cache.get<string | number>(key);
+      const cached = await this.redis.get<string | number>(key);
       const attempts = typeof cached === 'number' ? cached : Number(cached) || 0;
       this.logger.debug(`Current attempts for ${key}: ${attempts}`);
       return attempts;
@@ -248,12 +250,8 @@ export class RedisService {
   }
 
   async resetAttempts(key: string): Promise<void> {
-    try {
-      await this.cache.del(key);
-    } catch (error) {
-      console.error(`Error resetting attempts for key ${key}:`, error);
-      throw error;
-    }
+    await this.redis.delete(key);
+    this.logger.debug(`Attempts reset for ${key}`);
   }
 
   // Generic Methods
@@ -266,15 +264,15 @@ export class RedisService {
 
   async get<T>(key: string): Promise<T | undefined> {
     return this.executeWithRetry('get', async () => {
-      const value = await this.cache.get<T>(key);
+      const value = await this.redis.get<T>(key);
       this.logger.debug(`Cache get for ${key}: ${value ? 'found' : 'missing'}`);
-      return value;
+      return value ?? undefined;
     });
   }
 
   async del(key: string): Promise<void> {
     return this.executeWithRetry('del', async () => {
-      await this.cache.del(key);
+      await this.redis.delete(key);
       this.logger.debug(`Cache deleted for ${key}`);
     });
   }

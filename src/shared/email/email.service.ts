@@ -39,6 +39,7 @@ export class MailService {
     const expires = process.env.OTP_EXPIRES_MINUTES || '5';
     const html = `<p>Your Chessizen login code is <strong>${otp}</strong>. It expires in ${expires} minutes.</p>`;
 
+    this.logger.log(`Sending email`);
     await this.transporter.sendMail({
       from: `"Chessizen" <${process.env.MAIL_FROM || process.env.MAIL_USER}>`,
       to: email,

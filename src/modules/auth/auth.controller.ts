@@ -2,6 +2,7 @@ import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -26,9 +27,21 @@ export class AuthController {
     const verified = await this.authService.verifyOtp(dto);
 
     if (verified) {
-      return { message: 'OTP verified successfully' };
+      return { message: 'OTP verified successfully', verified };
     } else {
       return { message: 'Invalid or expired OTP' };
     }
+  }
+
+  @Post('refresh')
+  async refresh(@Body() dto: RefreshTokenDto) {
+    // returns { access_token, refresh_token }
+    return this.authService.refresh(dto.refreshToken);
+  }
+
+  @Post('logout')
+  async logout(@Body() dto: RefreshTokenDto) {
+    await this.authService.logout(dto.refreshToken);
+    return { message: 'logged out' };
   }
 }

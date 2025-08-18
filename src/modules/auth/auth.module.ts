@@ -3,16 +3,15 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { RedisModule } from 'src/shared/cache/redis.module';
 import { LoggerModule } from 'src/logger/logger.module';
-import { MongooseModule } from '@nestjs/mongoose';
-import { User, UserSchema } from 'src/schema/user.schema';
 import { JwtModule } from '@nestjs/jwt';
 import { AppConfigModule } from 'src/config/config.module';
 import { AppConfigService } from 'src/config/config.service';
 import { MailService } from 'src/shared/email/email.service';
+import { UserModule } from 'src/users/user.module';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
+    UserModule,
     RedisModule,
     JwtModule.registerAsync({
       imports: [AppConfigModule],

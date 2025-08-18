@@ -38,7 +38,6 @@ export class AuthService {
     await this.redis.setOtp(sendOtpDto.email, otp, 300);
 
     // Send via email
-    this.logger.log(`OTP for ${sendOtpDto.email}: ${otp}`);
     await this.mailService.sendOtpEmail(sendOtpDto.email, otp);
     this.logger.log(`OTP sent`);
   }

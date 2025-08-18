@@ -2,7 +2,6 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { LoggerService } from './logger/logger.service';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
-import * as cookieParser from 'cookie-parser';
 import { ValidationPipe } from '@nestjs/common';
 
 async function bootstrap() {
@@ -21,8 +20,6 @@ async function bootstrap() {
     credentials: true,
   });
 
-  app.use(cookieParser); // Enable the cookie-parser middleware
-
   app.setGlobalPrefix('api'); // Prefix all routes with /api (e.g., /users becomes /api/users)
 
   // Apply ValidationPipe globallyapp.useGlobalPipes(
@@ -39,6 +36,7 @@ async function bootstrap() {
   );
 
   const port = process.env.PORT || 3000;
+  logger.log(`Starting on port: ${port}`);
   await app.listen(port);
 
   process.on('SIGTERM', () => {
@@ -59,4 +57,4 @@ async function bootstrap() {
   });
 }
 
-bootstrap();
+void bootstrap();

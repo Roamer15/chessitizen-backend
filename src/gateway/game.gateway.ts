@@ -12,6 +12,7 @@ import { Server, Socket } from 'socket.io';
 import { MakeMoveDto } from 'src/modules/game/dto/make-move.dto';
 import { StartGameDto } from 'src/modules/game/dto/start-game.dto';
 import { GameService } from 'src/modules/game/game.service';
+import { GameStatus, ResultReason, Winner } from 'src/shared/enum/game.enum';
 
 @WebSocketGateway({
   cors: { origin: '*' }, // adjust for production
@@ -57,16 +58,16 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
    */
   @SubscribeMessage('makeMove')
   async handleMakeMove(
-    @MessageBody() data: { userId: string; dto: MakeMoveDto },
-    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { userId: string; gameId: string; dto: MakeMoveDto },
+    // @ConnectedSocket() client: Socket,
   ) {
-    const game = await this.gameService.makeMove(data.userId, data.dto);
+    const game = await this.gameService.makeMove(data.gameId, data.userId, data.dto);
 
     // Broadcast updated game state to everyone in the room
     this.server.to(game._id.toString()).emit('moveMade', game);
 
     // if game ended, notify all players
-    if (game.gameStatus === 'ENDED') {
+    if (game.gameStatus === GameStatus.ENDED) {
       this.server.to(game._id.toString()).emit('gameEnded', game);
     }
   }
@@ -76,11 +77,17 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
    */
   @SubscribeMessage('endGame')
   async handleEndGame(@MessageBody() data: { gameId: string; reason: string; winner: string }) {
-    const game = await this.gameService.endGame(
-      data.gameId,
-      data.reason as any,
-      data.winner as any,
-    );
+    if (!Object.values(ResultReason).includes(data.reason as ResultReason)) {
+      throw new Error(`Invalid reason: ${data.reason}`);
+    }
+
+    if (!Object.values(Winner).includes(data.winner as Winner)) {
+      throw new Error(`Invalid winner: ${data.winner}`);
+    }
+
+    const validatedReason = data.reason as ResultReason;
+    const validatedWinner = data.winner as Winner;
+    const game = await this.gameService.endGame(data.gameId, validatedReason, validatedWinner);
     this.server.to(game._id.toString()).emit('gameEnded', game);
   }
 }

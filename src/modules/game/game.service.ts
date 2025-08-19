@@ -43,9 +43,9 @@ export class GameService {
     return user;
   }
 
-  async makeMove(userId: string, dto: MakeMoveDto) {
+  async makeMove(gameId: string, userId: string, dto: MakeMoveDto) {
     const { from, to } = dto;
-    const game = await this.getGame(dto.gameId);
+    const game = await this.getGame(gameId);
     // const user = await this.getPlayer(userId);
     if (game.gameStatus !== GameStatus.ONGOING) {
       throwHttpError(ErrorCode.GAME_INVALID);
@@ -57,9 +57,11 @@ export class GameService {
 
     const chess = new Chess(game.currentFen);
 
-    const move = chess.move({ from, to, promotion: dto.promotion || 'q' });
+    const move = chess.move({ from, to, promotion: dto.promotion });
 
-    if (!move) throwHttpError(ErrorCode.INVALID_MOVE);
+    if (!move) {
+      throwHttpError(ErrorCode.INVALID_MOVE);
+    }
 
     game.currentFen = chess.fen();
     game.moves.push({
@@ -87,7 +89,7 @@ export class GameService {
     return game.save();
   }
 
-  async endGame(gameId: string, reason: ResultReason.ABORTED, winner: Winner.AI): Promise<Game> {
+  async endGame(gameId: string, reason: ResultReason, winner: Winner): Promise<Game> {
     const game = await this.getGame(gameId);
 
     game.gameStatus = GameStatus.ENDED;

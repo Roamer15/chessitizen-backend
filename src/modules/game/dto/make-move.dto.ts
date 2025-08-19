@@ -1,9 +1,6 @@
-import { IsString, Length } from 'class-validator';
+import { IsOptional, IsString, Length } from 'class-validator';
 
 export class MakeMoveDto {
-  @IsString()
-  gameId: string;
-
   @IsString()
   from: string;
 
@@ -12,5 +9,6 @@ export class MakeMoveDto {
 
   @IsString()
   @Length(1)
+  @IsOptional()
   promotion: string;
 }

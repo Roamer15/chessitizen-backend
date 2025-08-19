@@ -52,4 +52,21 @@ export const ErrorMessages: Record<ErrorCode, { message: string; status: HttpSta
     message: 'Redis attempt failed.',
     status: HttpStatus.CONFLICT,
   },
+  [ErrorCode.GAME_NOT_FOUND]: {
+    message: 'Game not found',
+    status: HttpStatus.NOT_FOUND,
+  },
+  [ErrorCode.GAME_INVALID]: {
+    message: 'Game already ended',
+    status: HttpStatus.BAD_REQUEST,
+  },
+  [ErrorCode.NOT_YOUR_GAME]: {
+    message: 'Game already ended',
+    status: HttpStatus.BAD_REQUEST,
+  },
+
+  [ErrorCode.INVALID_MOVE]: {
+    message: 'Invalid move',
+    status: HttpStatus.BAD_REQUEST,
+  },
 };

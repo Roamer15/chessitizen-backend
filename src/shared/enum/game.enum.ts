@@ -1,6 +1,7 @@
 export enum GameStatus {
   PENDING = 'pending',
   ONGOING = 'ongoing',
+  ENDED = 'ended',
   CHECKMATE = 'checkmate',
   STALEMATE = 'stalemate',
   DRAW = 'draw',
@@ -21,6 +22,8 @@ export enum ResultReason {
   DRAW_REP = 'draw-repetition',
   DRAW_AGREEMENT = 'draw-agreement',
   RESIGNATION = 'resignation',
+  INSUFFICIENT_MATERIAL = 'insufficient-material',
+  THREEFOLD_REPETITION = 'threefold-repetition',
   TIMEOUT = 'timeout',
   ABORTED = 'aborted',
   UNDECIDED = 'null',

@@ -9,6 +9,8 @@ import { Color, GameLevel, GameStatus, ResultReason, Winner } from 'src/shared/e
   },
 })
 export class Game extends Document {
+  _id: string;
+
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId;
 

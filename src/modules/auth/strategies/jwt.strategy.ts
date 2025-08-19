@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { PassportStrategy } from '@nestjs/passport';
 import { Model } from 'mongoose';
-import { ConfigService } from '@nestjs/config';
+// import { ConfigService } from '@nestjs/config';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ErrorCode } from 'src/common/errors/error-codes.enum';
 import { throwHttpError } from 'src/common/errors/http-exception.helper';
@@ -19,9 +19,9 @@ export interface JwtPayload {
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
-    private readonly configService: ConfigService,
+    // private readonly configService: ConfigService,
   ) {
-    const jwtSecret = configService.get<string>('JWT_SECRET');
+    const jwtSecret = process.env.JWT_REFRESH_SECRET;
     if (!jwtSecret) {
       throwHttpError(ErrorCode.INTERNAL_SERVER_ERROR, {
         reason: 'JWT_SECRET environment variable is not defined',

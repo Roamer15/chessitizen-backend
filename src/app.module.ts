@@ -8,6 +8,7 @@ import { LoggerModule } from './logger/logger.module';
 import { UserModule } from './users/user.module';
 import { RedisModule } from './shared/cache/redis.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { GameModule } from './modules/game/game.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { AuthModule } from './modules/auth/auth.module';
       }),
       inject: [ConfigService],
     }),
+    GameModule,
     AuthModule,
     RedisModule,
     LoggerModule,

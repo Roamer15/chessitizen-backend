@@ -1,9 +1,10 @@
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { Color } from 'src/shared/enum/game.enum';
 
 export class StartGameDto {
   @IsString()
   @IsOptional()
-  @IsIn(['white', 'black'])
+  @IsEnum(Color)
   userColor?: 'white' | 'black';
 
   @IsString()

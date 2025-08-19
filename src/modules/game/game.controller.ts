@@ -19,7 +19,6 @@ export class GameController {
   // Start a new AI game
   @Post('start')
   async startGame(@Req() req: AuthRequest, @Body() dto: StartGameDto): Promise<Game> {
-    console.log(req.user);
     const userId = req.user.sub; // assuming JWT payload has `sub`
     return this.gameService.startGame(userId, dto);
   }
@@ -32,7 +31,7 @@ export class GameController {
     @Body() dto: MakeMoveDto,
   ): Promise<Game> {
     const userId = req.user['sub'];
-    return this.gameService.makeMove(gameId, userId, { ...dto });
+    return this.gameService.makeMove(gameId, userId, dto);
   }
 
   // Get game state
@@ -43,7 +42,11 @@ export class GameController {
 
   // Optionally: end a game manually (aborted)
   @Post(':gameId/end')
-  async endGame(@Param('gameId') gameId: string): Promise<Game> {
-    return this.gameService.endGame(gameId, ResultReason.ABORTED, Winner.AI); // example
+  async endGame(
+    @Req() req: AuthRequest,
+    @Param('gameId') gameId: string,
+    @Body() body: { reason: ResultReason; winner: Winner },
+  ): Promise<Game> {
+    return this.gameService.endGame(gameId, body.reason, body.winner);
   }
 }

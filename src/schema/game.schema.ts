@@ -15,7 +15,7 @@ export class Game extends Document {
   userId: Types.ObjectId;
 
   @Prop({ required: true, enum: Object.values(Color), default: Color.WHITE })
-  userColor: string;
+  userColor: Color;
 
   @Prop({ required: true, default: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1' })
   currentFen: string;
@@ -60,7 +60,7 @@ export class Game extends Document {
     enum: Object.values(GameLevel),
     default: GameLevel.MEDIUM,
   })
-  aiDifficulty: string;
+  aiDifficulty: GameLevel;
 }
 
 export const GameSchema = SchemaFactory.createForClass(Game);

@@ -7,8 +7,10 @@ import {
   OnGatewayDisconnect,
   MessageBody,
   ConnectedSocket,
+  WsException,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { LoggerService } from 'src/logger/logger.service';
 import { MakeMoveDto } from 'src/modules/game/dto/make-move.dto';
 import { StartGameDto } from 'src/modules/game/dto/start-game.dto';
 import { GameService } from 'src/modules/game/game.service';
@@ -21,14 +23,17 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  constructor(private readonly gameService: GameService) {}
+  constructor(
+    private readonly gameService: GameService,
+    private readonly logger: LoggerService,
+  ) {}
 
   handleConnection(client: Socket) {
-    console.log(`Client connected: ${client.id}`);
+    this.logger.log(`Client connected: ${client.id}`);
   }
 
   handleDisconnect(client: Socket) {
-    console.log(`Client disconnected: ${client.id}`);
+    this.logger.log(`Client disconnected: ${client.id}`);
   }
 
   /**
@@ -43,12 +48,14 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   /**
    * Start a new game vs AI
    */
-  @SubscribeMessage('startGame')
-  async handleStartGame(
-    @MessageBody() data: { userId: string; dto: StartGameDto },
-    @ConnectedSocket() client: Socket,
-  ) {
-    const game = await this.gameService.startGame(data.userId, data.dto);
+  async handleStartGame(@MessageBody() dto: StartGameDto, @ConnectedSocket() client: Socket) {
+    // Assumes a WS auth guard/middleware attaches the JWT payload to client.data.user
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const userId = client.data?.user?.sub as string;
+    if (!userId) {
+      throw new WsException('Unauthenticated socket');
+    }
+    const game = await this.gameService.startGame(userId, dto);
     await client.join(game._id.toString());
     this.server.to(game._id.toString()).emit('gameStarted', game);
   }
@@ -56,13 +63,16 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   /**
    * Handle player moves
    */
-  @SubscribeMessage('makeMove')
   async handleMakeMove(
-    @MessageBody() data: { userId: string; gameId: string; dto: MakeMoveDto },
-    // @ConnectedSocket() client: Socket,
+    @MessageBody() data: { gameId: string; dto: MakeMoveDto },
+    @ConnectedSocket() client: Socket,
   ) {
-    const game = await this.gameService.makeMove(data.gameId, data.userId, data.dto);
-
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const userId = client.data?.user?.sub as string;
+    if (!userId) {
+      throw new WsException('Unauthenticated socket');
+    }
+    const game = await this.gameService.makeMove(data.gameId, userId, data.dto);
     // Broadcast updated game state to everyone in the room
     this.server.to(game._id.toString()).emit('moveMade', game);
 
@@ -76,13 +86,15 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * End game manually (abort/timeout/etc)
    */
   @SubscribeMessage('endGame')
-  async handleEndGame(@MessageBody() data: { gameId: string; reason: string; winner: string }) {
+  async handleEndGame(
+    @MessageBody() data: { gameId: string; reason: string; winner: string },
+    @ConnectedSocket() client: Socket,
+  ) {
     if (!Object.values(ResultReason).includes(data.reason as ResultReason)) {
-      throw new Error(`Invalid reason: ${data.reason}`);
+      throw new WsException(`Invalid reason: ${data.reason}`);
     }
-
     if (!Object.values(Winner).includes(data.winner as Winner)) {
-      throw new Error(`Invalid winner: ${data.winner}`);
+      throw new WsException(`Invalid winner: ${data.winner}`);
     }
 
     const validatedReason = data.reason as ResultReason;

@@ -1,6 +1,6 @@
 import { Body, Controller, Param, Post, Query } from '@nestjs/common';
 import { AiService } from './ai.service';
-import { GameService } from '../game/game.service';
+import { GameService } from '../modules/game/game.service';
 
 class SuggestBodyDto {
   fen?: string;   // optional: override server FEN (analysis mode); otherwise read from game
@@ -36,9 +36,9 @@ export class AiController {
 
     let fen = fenOverride;
     if (!fen) {
-      const game = await this.gameService.findById(gameId);
+      const game = await this.gameService.getGame(gameId);
       if (!game) throw new Error('Game not found');
-      fen = game.fen;
+      fen = game.currentFen;
     }
 
     const suggestion = await this.aiService.suggestMove(fen!, pgn, {

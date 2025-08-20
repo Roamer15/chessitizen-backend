@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Chess } from 'chess.js';
 import { Inject, forwardRef } from '@nestjs/common';
-import { GameService } from '../game/game.service';
+import { GameService } from '../modules/game/game.service';
+import { GameStatus } from 'src/shared/enum/game.enum';
+import { Game } from 'src/schema/game.schema';
+import { GeminiService } from '../ai/gemini.service'
 
 type BestMove = { from: string; to: string; promotion?: string };
 type EngineOptions = { depth?: number; skillLevel?: number; movetimeMs?: number };
@@ -13,6 +16,7 @@ export class AiService {
   constructor(
     @Inject(forwardRef(() => GameService))
     private readonly gameService: GameService,
+    private readonly geminiService: GeminiService,
   ) {}
 
   /**
@@ -120,7 +124,8 @@ export class AiService {
     const best = await this.getBestMoveFromFEN(fen, opts);
     const san = this.toSAN(fen, best);
     // Placeholder explanation. Replace with LLM call if desired.
-    const explanation = `Engine suggests ${san} to improve position from ${best.from}-${best.to}.`;
+    const prompt = `Engine suggests ${san} to improve position from ${best.from}-${best.to}. take into cosideration the current board state ${fen} and the stockfish options level provided ${JSON.stringify(opts)}`;
+    const explanation = (await this.geminiService.generateExplanation(prompt)).toString();
     return { move: `${best.from}${best.to}${best.promotion ?? ''}`, ...best, explanation };
   }
 
@@ -129,15 +134,15 @@ export class AiService {
    * persist via GameService, and return updated game.
    */
   async applyAiMoveToGame(gameId: string, opts: EngineOptions = {}) {
-    const game = await this.gameService.findById(gameId);
+    const game = await this.gameService.getGame(gameId);
     if (!game) throw new Error('Game not found');
-    if (game.status !== 'in-progress' && game.status !== 'ongoing' && game.status !== 'waiting') {
-      throw new Error(`Game status is ${game.status}, cannot move`);
+    if (game.gameStatus !== GameStatus.PENDING && game.gameStatus !== GameStatus.ONGOING && game.gameStatus !== GameStatus.WAITING) {
+      throw new Error(`Game status is ${game.gameStatus}, cannot move`);
     }
 
-    const best = await this.getBestMoveFromFEN(game.fen, opts);
+    const best = await this.getBestMoveFromFEN(game.currentFen, opts);
 
-    const chess = new Chess(game.fen);
+    const chess = new Chess(game.currentFen);
     const moveRes = chess.move({
       from: best.from,
       to: best.to,
@@ -145,7 +150,7 @@ export class AiService {
     });
 
     if (!moveRes) {
-      this.logger.warn(`Engine proposed illegal move ${best.from}-${best.to} on FEN: ${game.fen}`);
+      this.logger.warn(`Engine proposed illegal move ${best.from}-${best.to} on FEN: ${game.currentFen}`);
       throw new Error('AI proposed an illegal move');
     }
 

@@ -1,7 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { AiService } from './ai.service';
 import { AiController } from './ai.controller';
-import { GameModule } from '../game/game.module';
+import { GameModule } from '../modules/game/game.module'; // Adjust the import path as needed
 
 @Module({
   imports: [

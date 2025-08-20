@@ -108,6 +108,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const validatedReason = data.reason as ResultReason;
     const validatedWinner = data.winner as Winner;
     const game = await this.gameService.endGame(data.gameId, validatedReason, validatedWinner);
+    client.emit('gameEnded', game);
     this.server.to(game._id.toString()).emit('gameEnded', game);
   }
 }

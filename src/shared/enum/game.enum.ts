@@ -8,6 +8,7 @@ export enum GameStatus {
   RESIGNED = 'resigned',
   TIMEOUT = 'timeout',
   ABORTED = 'aborted',
+  WAITING = 'waiting',
 }
 
 export enum Color {

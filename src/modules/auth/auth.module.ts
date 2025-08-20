@@ -8,6 +8,8 @@ import { AppConfigModule } from 'src/config/config.module';
 import { AppConfigService } from 'src/config/config.service';
 import { MailService } from 'src/shared/email/email.service';
 import { UserModule } from 'src/users/user.module';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
   imports: [
@@ -26,6 +28,7 @@ import { UserModule } from 'src/users/user.module';
     LoggerModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, MailService],
+  providers: [AuthService, MailService, JwtAuthGuard, JwtStrategy],
+  exports: [AuthService, JwtAuthGuard, JwtModule],
 })
 export class AuthModule {}

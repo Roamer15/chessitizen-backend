@@ -3,37 +3,37 @@ import { ErrorCode } from './error-codes.enum';
 
 export const ErrorMessages: Record<ErrorCode, { message: string; status: HttpStatus }> = {
   [ErrorCode.INTERNAL_SERVER_ERROR]: {
-    message: 'Une erreur interne du serveur est survenue.',
+    message: 'An internal server error occurred.',
     status: HttpStatus.INTERNAL_SERVER_ERROR,
   },
   [ErrorCode.UNAUTHORIZED]: {
-    message: 'Authentification requise ou invalide.',
+    message: 'Authentication required or invalid.',
     status: HttpStatus.UNAUTHORIZED,
   },
   [ErrorCode.FORBIDDEN]: {
-    message: "Vous n'avez pas la permission d'accéder à cette ressource.",
+    message: 'You do not have permission to access this resource.',
     status: HttpStatus.FORBIDDEN,
   },
   [ErrorCode.NOT_FOUND]: {
-    message: 'La ressource demandée est introuvable.',
+    message: 'The requested resource was not found.',
     status: HttpStatus.NOT_FOUND,
   },
   [ErrorCode.BAD_REQUEST]: {
-    message: 'La requête est invalide.',
+    message: 'The request is invalid.',
     status: HttpStatus.BAD_REQUEST,
   },
   [ErrorCode.VALIDATION_FAILED]: {
-    message: 'La validation des données a échoué.',
+    message: 'Data validation failed.',
     status: HttpStatus.BAD_REQUEST,
   },
 
-  // Erreurs d'authentification/utilisateur
+  // Authentication/user errors
   [ErrorCode.EMAIL_ALREADY_USED]: {
-    message: 'Cet email est déjà utilisé.',
+    message: 'This email is already in use.',
     status: HttpStatus.CONFLICT,
   },
   [ErrorCode.USER_NOT_FOUND]: {
-    message: 'Utilisateur non trouvé.',
+    message: 'User not found.',
     status: HttpStatus.NOT_FOUND,
   },
   [ErrorCode.TOO_MANY_REQUESTS]: {
@@ -51,5 +51,22 @@ export const ErrorMessages: Record<ErrorCode, { message: string; status: HttpSta
   [ErrorCode.CACHE_ATTEMPT_FAILED]: {
     message: 'Redis attempt failed.',
     status: HttpStatus.CONFLICT,
+  },
+  [ErrorCode.GAME_NOT_FOUND]: {
+    message: 'Game not found',
+    status: HttpStatus.NOT_FOUND,
+  },
+  [ErrorCode.GAME_INVALID]: {
+    message: 'Game already ended',
+    status: HttpStatus.BAD_REQUEST,
+  },
+  [ErrorCode.NOT_YOUR_GAME]: {
+    message: 'You are not a participant in this game',
+    status: HttpStatus.FORBIDDEN,
+  },
+
+  [ErrorCode.INVALID_MOVE]: {
+    message: 'Invalid move',
+    status: HttpStatus.BAD_REQUEST,
   },
 };

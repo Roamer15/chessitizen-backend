@@ -57,11 +57,11 @@ export class AuthService {
 
     const user = await this.userModel.findOneAndUpdate(
       { email },
-      { verified: true },
+      { verified: true, otpSecret: otp },
       { new: true, upsert: true },
     );
 
-    const userId = user._id as string; // Force TypeScript to treat _id as string
+    const userId = user._id as string;
 
     const { access_token, refresh_token } = await this.issueTokens(userId, user.email);
 

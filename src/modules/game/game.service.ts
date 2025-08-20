@@ -27,7 +27,7 @@ export class GameService {
       aiDifficulty: dto.aiDifficulty,
       currentFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
     });
-
+    // this.logger.log(game.save());
     return await game.save();
   }
 

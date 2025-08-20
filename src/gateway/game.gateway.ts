@@ -1,4 +1,5 @@
 // game.gateway.ts
+import { UseGuards } from '@nestjs/common';
 import {
   SubscribeMessage,
   WebSocketGateway,
@@ -15,10 +16,12 @@ import { MakeMoveDto } from 'src/modules/game/dto/make-move.dto';
 import { StartGameDto } from 'src/modules/game/dto/start-game.dto';
 import { GameService } from 'src/modules/game/game.service';
 import { GameStatus, ResultReason, Winner } from 'src/shared/enum/game.enum';
+import { WsAuthGuard } from './guard/ws-auth.guard';
 
 @WebSocketGateway({
   cors: { origin: '*' }, // adjust for production
 })
+@UseGuards(WsAuthGuard)
 export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
@@ -48,6 +51,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   /**
    * Start a new game vs AI
    */
+  @SubscribeMessage('startGame')
   async handleStartGame(@MessageBody() dto: StartGameDto, @ConnectedSocket() client: Socket) {
     // Assumes a WS auth guard/middleware attaches the JWT payload to client.data.user
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -57,12 +61,15 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     const game = await this.gameService.startGame(userId, dto);
     await client.join(game._id.toString());
+    client.emit('gameStarted', game);
+    this.logger.log(`Emitting gameStarted for ${game._id} to room`);
     this.server.to(game._id.toString()).emit('gameStarted', game);
   }
 
   /**
    * Handle player moves
    */
+  @SubscribeMessage('makeMove')
   async handleMakeMove(
     @MessageBody() data: { gameId: string; dto: MakeMoveDto },
     @ConnectedSocket() client: Socket,
@@ -73,6 +80,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       throw new WsException('Unauthenticated socket');
     }
     const game = await this.gameService.makeMove(data.gameId, userId, data.dto);
+    client.emit('moveMade', game);
     // Broadcast updated game state to everyone in the room
     this.server.to(game._id.toString()).emit('moveMade', game);
 

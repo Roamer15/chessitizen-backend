@@ -5,10 +5,11 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Game, GameSchema } from 'src/schema/game.schema';
 import { User, UserSchema } from 'src/schema/user.schema';
 import { AuthModule } from '../auth/auth.module';
-import { GameGateway } from 'src/gateway/game.gateway';
+// import { GameGatewayModule } from 'src/gateway/gateway.module';
 // import { AiListener } from './ai-listener.listener';
 import { LoggerModule } from 'src/logger/logger.module';
 import { AiModule } from 'src/ai/ai.module';
+import { GameGatewayModule } from 'src/gateway/gateway.module';
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -16,11 +17,12 @@ import { AiModule } from 'src/ai/ai.module';
       { name: User.name, schema: UserSchema },
     ]),
     AuthModule,
+    forwardRef(() => GameGatewayModule),
     forwardRef(() => AiModule),
     LoggerModule,
   ],
   controllers: [GameController],
-  providers: [GameService, GameGateway],
-  exports: [GameService],
+  providers: [GameService],
+  exports: [GameService], // ✅ still export GameService
 })
 export class GameModule {}

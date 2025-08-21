@@ -1,5 +1,5 @@
 // game.gateway.ts
-import { UseGuards } from '@nestjs/common';
+import { forwardRef, Inject, UseGuards } from '@nestjs/common';
 import {
   SubscribeMessage,
   WebSocketGateway,
@@ -27,6 +27,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   server: Server;
 
   constructor(
+    @Inject(forwardRef(() => GameService))
     private readonly gameService: GameService,
     private readonly logger: LoggerService,
   ) {}

@@ -10,6 +10,7 @@ import { UserModule } from './users/user.module';
 import { RedisModule } from './shared/cache/redis.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { GameModule } from './modules/game/game.module';
+import { GameGatewayModule } from './gateway/gateway.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { GameModule } from './modules/game/game.module';
     }),
     EventEmitterModule.forRoot(),
     GameModule,
+    GameGatewayModule,
     AuthModule,
     RedisModule,
     LoggerModule,

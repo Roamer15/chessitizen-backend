@@ -14,9 +14,9 @@ import { Server, Socket } from 'socket.io';
 import { LoggerService } from 'src/logger/logger.service';
 import { MakeMoveDto } from 'src/modules/game/dto/make-move.dto';
 import { StartGameDto } from 'src/modules/game/dto/start-game.dto';
-import { GameService } from 'src/modules/game/game.service';
 import { GameStatus, ResultReason, Winner } from 'src/shared/enum/game.enum';
 import { WsAuthGuard } from './guard/ws-auth.guard';
+import { GameService } from '../modules/game/game.service';
 
 @WebSocketGateway({
   cors: { origin: '*' }, // adjust for production
@@ -110,5 +110,10 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const game = await this.gameService.endGame(data.gameId, validatedReason, validatedWinner);
     client.emit('gameEnded', game);
     this.server.to(game._id.toString()).emit('gameEnded', game);
+  }
+
+  //PVP event
+  emitGameUpdate(gameId: string, payload: any) {
+    this.server.to(gameId).emit('gameUpdate', payload);
   }
 }

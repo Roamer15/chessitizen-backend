@@ -1,22 +1,21 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Chess } from 'chess.js';
 import { Inject, forwardRef } from '@nestjs/common';
 import { GameService } from '../modules/game/game.service';
 import { GameStatus } from 'src/shared/enum/game.enum';
-import { Game } from 'src/schema/game.schema';
-import { GeminiService } from '../ai/gemini.service'
+import { GeminiService } from '../ai/gemini.service';
+import { LoggerService } from 'src/logger/logger.service';
 
-type BestMove = { from: string; to: string; promotion?: string };
+type BestMove = { from: string; to: string; promotion?: string; san: string };
 type EngineOptions = { depth?: number; skillLevel?: number; movetimeMs?: number };
 
 @Injectable()
 export class AiService {
-  private readonly logger = new Logger(AiService.name);
-
   constructor(
     @Inject(forwardRef(() => GameService))
     private readonly gameService: GameService,
     private readonly geminiService: GeminiService,
+    private readonly logger: LoggerService,
   ) {}
 
   /**
@@ -24,8 +23,9 @@ export class AiService {
    * Each request uses a short-lived engine for simplicity & isolation.
    */
   private createEngine(): any {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-require-imports
     const Stockfish = require('stockfish');
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-call
     return Stockfish();
   }
 
@@ -33,28 +33,29 @@ export class AiService {
    * Ask Stockfish for the best move from a given FEN.
    * You can control strength via depth/skillLevel/movetimeMs.
    */
-  async getBestMoveFromFEN(
-    fen: string,
-    opts: EngineOptions = {},
-  ): Promise<BestMove> {
+  async getBestMoveFromFEN(fen: string, opts: EngineOptions = {}): Promise<BestMove> {
     const { depth = 13, skillLevel = 14, movetimeMs } = opts;
 
     return new Promise<BestMove>((resolve, reject) => {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const engine = this.createEngine();
       let resolved = false;
 
       const cleanUp = () => {
         try {
-          // @ts-ignore - some builds support terminate/close/noop
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
           if (engine?.terminate) engine.terminate();
         } catch {
           /* noop */
         }
       };
 
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
       const send = (cmd: string) => engine.postMessage(cmd);
 
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       engine.onmessage = (raw: any) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
         const msg: string = typeof raw === 'string' ? raw : raw?.data;
         if (!msg) return;
 
@@ -65,10 +66,11 @@ export class AiService {
           const from = uci.slice(0, 2);
           const to = uci.slice(2, 4);
           const promotion = uci.length > 4 ? uci.slice(4) : undefined;
+          const san = uci;
 
           resolved = true;
           cleanUp();
-          resolve({ from, to, promotion });
+          resolve({ from, to, promotion, san });
         }
       };
 
@@ -88,12 +90,15 @@ export class AiService {
       }
 
       // safety timeout (fallback)
-      const watchdog = setTimeout(() => {
-        if (!resolved) {
-          cleanUp();
-          reject(new Error('Stockfish timeout'));
-        }
-      }, Math.max(movetimeMs ?? 0, 10000)); // at least 10s
+      const watchdog = setTimeout(
+        () => {
+          if (!resolved) {
+            cleanUp();
+            reject(new Error('Stockfish timeout'));
+          }
+        },
+        Math.max(movetimeMs ?? 0, 10000),
+      ); // at least 10s
       // clear when resolved
       const stopWatchdog = () => {
         if (watchdog) clearTimeout(watchdog);
@@ -125,7 +130,7 @@ export class AiService {
     const san = this.toSAN(fen, best);
     // Placeholder explanation. Replace with LLM call if desired.
     const prompt = `Engine suggests ${san} to improve position from ${best.from}-${best.to}. take into cosideration the current board state ${fen} and the stockfish options level provided ${JSON.stringify(opts)}`;
-    const explanation = (await this.geminiService.generateExplanation(prompt)).toString();
+    const explanation = String(await this.geminiService.generateExplanation(prompt));
     return { move: `${best.from}${best.to}${best.promotion ?? ''}`, ...best, explanation };
   }
 
@@ -136,7 +141,11 @@ export class AiService {
   async applyAiMoveToGame(gameId: string, opts: EngineOptions = {}) {
     const game = await this.gameService.getGame(gameId);
     if (!game) throw new Error('Game not found');
-    if (game.gameStatus !== GameStatus.PENDING && game.gameStatus !== GameStatus.ONGOING && game.gameStatus !== GameStatus.WAITING) {
+    if (
+      game.gameStatus !== GameStatus.PENDING &&
+      game.gameStatus !== GameStatus.ONGOING &&
+      game.gameStatus !== GameStatus.WAITING
+    ) {
       throw new Error(`Game status is ${game.gameStatus}, cannot move`);
     }
 
@@ -146,16 +155,19 @@ export class AiService {
     const moveRes = chess.move({
       from: best.from,
       to: best.to,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       promotion: best.promotion as any, // e.g. 'q'
     });
 
     if (!moveRes) {
-      this.logger.warn(`Engine proposed illegal move ${best.from}-${best.to} on FEN: ${game.currentFen}`);
+      this.logger.warn(
+        `Engine proposed illegal move ${best.from}-${best.to} on FEN: ${game.currentFen}`,
+      );
       throw new Error('AI proposed an illegal move');
     }
 
     // Persist via GameService (centralized updates)
-    return this.gameService.updateAfterMove(game, chess, moveRes);
+    return this.gameService.broadcastGameUpdate(game);
   }
 
   /**
@@ -166,6 +178,7 @@ export class AiService {
     const res = chess.move({
       from: move.from,
       to: move.to,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       promotion: move.promotion as any,
     });
     return res?.san ?? `${move.from}-${move.to}`;

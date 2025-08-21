@@ -31,7 +31,7 @@ export class GameController {
     @Body() dto: MakeMoveDto,
   ): Promise<Game> {
     const userId = req.user['sub'];
-    return this.gameService.makeMove(gameId, userId, dto);
+    return await this.gameService.makeMove(gameId, userId, dto);
   }
 
   // Get game state

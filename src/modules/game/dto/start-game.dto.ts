@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
 import { Color } from 'src/shared/enum/game.enum';
 
 export class StartGameDto {
@@ -10,4 +10,8 @@ export class StartGameDto {
   @IsString()
   @IsOptional()
   aiDifficulty?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  vsAi?: boolean;
 }

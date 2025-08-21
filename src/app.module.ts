@@ -3,6 +3,7 @@ import databaseConfig from './config/configuration';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { MongooseModule } from '@nestjs/mongoose';
 import { LoggerModule } from './logger/logger.module';
 import { UserModule } from './users/user.module';
@@ -24,6 +25,7 @@ import { GameModule } from './modules/game/game.module';
       }),
       inject: [ConfigService],
     }),
+    EventEmitterModule.forRoot(),
     GameModule,
     AuthModule,
     RedisModule,

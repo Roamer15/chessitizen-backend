@@ -10,6 +10,14 @@ import { MakeMoveDto } from './dto/make-move.dto';
 import { GameStatus, ResultReason, Winner } from 'src/shared/enum/game.enum';
 import { Chess } from 'chess.js';
 import { User } from 'src/schema/user.schema';
+import { AiService } from 'src/ai/ai.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { GameGateway } from 'src/gateway/game.gateway';
+
+interface skillSet {
+  skillLevel: number;
+  depth: number;
+}
 
 @Injectable()
 export class GameService {
@@ -17,19 +25,10 @@ export class GameService {
     @InjectModel(Game.name) private gameModel: Model<Game>,
     @InjectModel(User.name) private userModel: Model<User>,
     private readonly logger: LoggerService,
+    private readonly aiService: AiService,
+    private readonly eventEmitter: EventEmitter2,
+    private readonly gameGateway: GameGateway,
   ) {}
-
-  async startGame(userId: string, dto: StartGameDto): Promise<Game> {
-    const color = dto.userColor;
-    const game = new this.gameModel({
-      userId: new Types.ObjectId(userId),
-      userColor: color,
-      aiDifficulty: dto.aiDifficulty,
-      currentFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
-    });
-    // this.logger.log(game.save());
-    return await game.save();
-  }
 
   async getGame(gameId: string): Promise<Game> {
     const game = await this.gameModel.findById(gameId);
@@ -43,47 +42,99 @@ export class GameService {
     return user;
   }
 
+  handleGameOver(game: Game, chess: Chess, winner: Winner) {
+    game.gameStatus = GameStatus.ENDED;
+    game.endedAt = new Date();
+
+    if (chess.isCheckmate()) {
+      game.result = { outcome: ResultReason.CHECKMATE, winner };
+    } else if (chess.isDraw()) {
+      let outcome = ResultReason.DRAW_50;
+      if (chess.isStalemate()) outcome = ResultReason.STALEMATE;
+      else if (chess.isInsufficientMaterial()) outcome = ResultReason.INSUFFICIENT_MATERIAL;
+      else if (chess.isThreefoldRepetition()) outcome = ResultReason.THREEFOLD_REPETITION;
+      else if (chess.isDrawByFiftyMoves()) outcome = ResultReason.DRAW_50;
+      game.result = { outcome, winner: Winner.UNDECICED };
+    }
+
+    return game.save();
+  }
+
+  getAiSkillLevel(aiDifficulty: string) {
+    let opts: skillSet;
+    switch (aiDifficulty) {
+      case 'easy':
+        opts = { skillLevel: 3, depth: 6 };
+        break;
+      case 'medium':
+        opts = { skillLevel: 7, depth: 9 };
+        break;
+      case 'hard':
+        opts = { skillLevel: 12, depth: 12 };
+        break;
+      case 'expert':
+        opts = { skillLevel: 16, depth: 15 };
+        break;
+      case 'grandmaster':
+        opts = { skillLevel: 20, depth: 18 };
+        break;
+      default:
+        opts = { skillLevel: 7, depth: 9 };
+        break;
+    }
+    return opts;
+  }
+
+  async startGame(userId: string, dto: StartGameDto): Promise<Game> {
+    this.logger.log(`Game starting for ${userId} with props: ${dto.vsAi}}`);
+    const color = dto.userColor;
+    const game = new this.gameModel({
+      whitePlayer: color === 'white' ? new Types.ObjectId(userId) : null,
+      blackPlayer: color === 'black' ? new Types.ObjectId(userId) : null,
+      vsAi: dto.vsAi,
+      userColor: color,
+      aiDifficulty: dto.aiDifficulty,
+      currentFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+    });
+    // this.logger.log(game.save());
+    return await game.save();
+  }
+
   async makeMove(gameId: string, userId: string, dto: MakeMoveDto) {
-    const { from, to } = dto;
+    const { from, to, promotion } = dto;
     const game = await this.getGame(gameId);
     // const user = await this.getPlayer(userId);
     if (game.gameStatus !== GameStatus.ONGOING) {
       throwHttpError(ErrorCode.GAME_INVALID);
     }
 
-    if (game.userId.toString() !== userId.toString()) {
-      throwHttpError(ErrorCode.NOT_YOUR_GAME);
-    }
-
     const chess = new Chess(game.currentFen);
 
-    const move = chess.move({ from, to, promotion: dto.promotion });
-
-    if (!move) {
-      throwHttpError(ErrorCode.INVALID_MOVE);
+    const turnColor = chess.turn() === 'w' ? 'whitePlayer' : 'blackPlayer';
+    if (game[turnColor]?.toString() !== userId.toString()) {
+      throwHttpError(ErrorCode.NOT_YOUR_TURN);
     }
 
+    const move = chess.move({ from, to, promotion });
+    if (!move) throwHttpError(ErrorCode.INVALID_MOVE);
+
     game.currentFen = chess.fen();
-    game.moves.push({
-      from,
-      to,
-      fen: chess.fen(),
-      san: move.san,
-    });
+    game.moves.push({ from, to, fen: chess.fen(), san: move.san });
 
     if (chess.isGameOver()) {
-      game.gameStatus = GameStatus.ENDED;
-      game.endedAt = new Date();
+      return this.handleGameOver(
+        game,
+        chess,
+        turnColor === 'whitePlayer' ? Winner.WHITE : Winner.BLACK,
+      );
+    }
 
-      if (chess.isCheckmate()) {
-        game.result = { outcome: ResultReason.CHECKMATE, winner: Winner.HUMAN };
-      } else if (chess.isDraw()) {
-        let outcome = ResultReason.DRAW_50;
-        if (chess.isStalemate()) outcome = ResultReason.STALEMATE;
-        else if (chess.isInsufficientMaterial()) outcome = ResultReason.INSUFFICIENT_MATERIAL;
-        else if (chess.isThreefoldRepetition()) outcome = ResultReason.THREEFOLD_REPETITION;
-        game.result = { outcome, winner: Winner.UNDECICED };
-      }
+    if (game.vsAI) {
+      this.eventEmitter.emit('game.aiMove', {
+        gameId: game._id,
+        fen: game.currentFen,
+        difficulty: game.aiDifficulty,
+      });
     }
 
     return game.save();
@@ -97,5 +148,17 @@ export class GameService {
     game.result = { outcome: reason, winner };
 
     return game.save();
+  }
+
+  broadcastGameUpdate(game: Game) {
+    const payload = {
+      gameId: game._id,
+      fen: game.currentFen,
+      moves: game.moves,
+      status: game.gameStatus,
+    };
+
+    // emit to all clients in this game room
+    this.gameGateway.emitGameUpdate(game._id.toString(), payload);
   }
 }

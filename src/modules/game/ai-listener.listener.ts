@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { Chess } from 'chess.js';
 import { AiService } from 'src/ai/ai.service';
 import { GameService } from './game.service';
+import { GameGateway } from 'src/gateway/game.gateway';
 import { GameStatus, Winner } from 'src/shared/enum/game.enum';
 
 @Injectable()
@@ -10,11 +11,13 @@ export class AiListener {
   constructor(
     private readonly aiService: AiService,
     private readonly gameService: GameService,
+    private readonly gameGateway: GameGateway,
   ) {}
 
   @OnEvent('game.aiMove')
   async handleAiMove(payload: { gameId: string; fen: string; difficulty: string }) {
     const { gameId, fen, difficulty } = payload;
+    console.log('aiMove');
 
     const game = await this.gameService.getGame(gameId);
     if (!game || game.gameStatus !== GameStatus.ONGOING) return;
@@ -26,6 +29,8 @@ export class AiListener {
       skillLevel: aiSkill.skillLevel,
       depth: aiSkill.depth,
     });
+
+    console.log(`AI move`, aiMove);
 
     if (aiMove) {
       chess.move(aiMove);
@@ -47,6 +52,11 @@ export class AiListener {
 
       // ✅ Optional: emit socket update to clients
       this.gameService.broadcastGameUpdate(game);
+      this.gameGateway.server.to(game._id.toString()).emit('aiMoveMade', {
+        gameId: game._id,
+        move: aiMove, // { from, to, promotion, san }
+        currentFen: game.currentFen,
+      });
     }
   }
 }

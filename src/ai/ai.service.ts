@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { Chess } from 'chess.js';
+// import Stockfish from 'stockfish.wasm';
+// import { StockfishEngine } from 'stockfish.wasm';
 import { Inject, forwardRef } from '@nestjs/common';
+// import path from 'path';
+// import { pathToFileURL } from 'url';
+import { spawn } from 'child_process';
 import { GameService } from '../modules/game/game.service';
 import { GameStatus } from 'src/shared/enum/game.enum';
 import { GeminiService } from '../ai/gemini.service';
@@ -11,109 +16,193 @@ type EngineOptions = { depth?: number; skillLevel?: number; movetimeMs?: number 
 
 @Injectable()
 export class AiService {
+  // private engine: any;
+  // private wasmPath: string;
+
   constructor(
     @Inject(forwardRef(() => GameService))
     private readonly gameService: GameService,
     private readonly geminiService: GeminiService,
     private readonly logger: LoggerService,
-  ) {}
+  ) {
+    // this.wasmPath = pathToFileURL(path.resolve('node_modules/stockfish.wasm/stockfish.wasm')).href;
+  }
 
   /**
    * Creates a Stockfish engine instance (WASM via `stockfish` package).
-   * Each request uses a short-lived engine for simplicity & isolation.
+   * Each request uses a short-lived engine for simplicity & isolation................................................
    */
-  private createEngine(): any {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-require-imports
-    const Stockfish = require('stockfish');
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call
-    return Stockfish();
-  }
+  // createEngine(): Promise<StockfishEngine> {
+  //   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-require-imports
+  //   const Stockfish = require('stockfish.wasm');
+  //   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+  //   this.engine = new Stockfish({ wasmBinaryFile: this.wasmPath });
+  //   return this.engine;
+  // }
 
+  // async createEngine(): Promise<StockfishEngine> {
+  //   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-member-access
+  //   const Stockfish = require('stockfish.wasm').default ?? require('stockfish.wasm');
+  //   const path = this.wasmPath;
+  //   console.log(path);
+  //   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+  //   this.engine = await Stockfish({
+  //     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+  //     wasmBinaryFile: pathToFileURL(path.resolve('node_modules/stockfish.wasm/stockfish.wasm'))
+  //       .href,
+  //   });
+  //   // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+  //   return this.engine;
+  // }
   /**
    * Ask Stockfish for the best move from a given FEN.
    * You can control strength via depth/skillLevel/movetimeMs.
    */
-  async getBestMoveFromFEN(fen: string, opts: EngineOptions = {}): Promise<BestMove> {
-    const { depth = 13, skillLevel = 14, movetimeMs } = opts;
+  // async getBestMoveFromFEN(fen: string, opts: EngineOptions = {}): Promise<BestMove> {
+  //   const { depth = 13, skillLevel = 14, movetimeMs } = opts;
+  //   const engine = await this.createEngine();
+  //   return new Promise<BestMove>((resolve, reject) => {
+  //     let resolved = false;
 
-    return new Promise<BestMove>((resolve, reject) => {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      const engine = this.createEngine();
-      let resolved = false;
+  //     const cleanUp = () => {
+  //       try {
+  //         if (engine?.terminate) engine.terminate();
+  //       } catch {
+  //         /* noop */
+  //       }
+  //     };
 
-      const cleanUp = () => {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-          if (engine?.terminate) engine.terminate();
-        } catch {
-          /* noop */
-        }
-      };
+  //     const send = (cmd: string) => engine.postMessage(cmd);
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-      const send = (cmd: string) => engine.postMessage(cmd);
+  //     engine.onmessage = (raw: any) => {
+  //       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+  //       const msg: string = typeof raw === 'string' ? raw : raw?.data;
+  //       if (!msg) return;
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      engine.onmessage = (raw: any) => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-        const msg: string = typeof raw === 'string' ? raw : raw?.data;
-        if (!msg) return;
+  //       // Example: "bestmove e2e4" or "bestmove e7e8q" (with promotion)
+  //       if (msg.startsWith('bestmove')) {
+  //         const parts = msg.split(/\s+/);
+  //         const uci = parts[1]; // e.g. e2e4 or e7e8q
+  //         const from = uci.slice(0, 2);
+  //         const to = uci.slice(2, 4);
+  //         const promotion = uci.length > 4 ? uci.slice(4) : undefined;
+  //         const san = uci;
 
-        // Example: "bestmove e2e4" or "bestmove e7e8q" (with promotion)
-        if (msg.startsWith('bestmove')) {
-          const parts = msg.split(/\s+/);
-          const uci = parts[1]; // e.g. e2e4 or e7e8q
-          const from = uci.slice(0, 2);
-          const to = uci.slice(2, 4);
-          const promotion = uci.length > 4 ? uci.slice(4) : undefined;
-          const san = uci;
+  //         resolved = true;
+  //         cleanUp();
+  //         resolve({ from, to, promotion, san });
+  //       }
+  //     };
 
-          resolved = true;
-          cleanUp();
-          resolve({ from, to, promotion, san });
-        }
-      };
+  //     // Basic UCI init
+  //     send('uci');
+  //     // Optional skill level (0–20); lower = weaker/more human-like
+  //     send(`setoption name Skill Level value ${Math.min(Math.max(skillLevel, 0), 20)}`);
+  //     // (Optional) Contempt, Threads, Hash, etc. can be tuned here
 
-      // Basic UCI init
-      send('uci');
-      // Optional skill level (0–20); lower = weaker/more human-like
-      send(`setoption name Skill Level value ${Math.min(Math.max(skillLevel, 0), 20)}`);
-      // (Optional) Contempt, Threads, Hash, etc. can be tuned here
+  //     send('isready');
+  //     send(`position fen ${fen}`);
 
-      send('isready');
-      send(`position fen ${fen}`);
+  //     if (movetimeMs && movetimeMs > 0) {
+  //       send(`go movetime ${movetimeMs}`);
+  //     } else {
+  //       send(`go depth ${depth}`);
+  //     }
 
-      if (movetimeMs && movetimeMs > 0) {
-        send(`go movetime ${movetimeMs}`);
-      } else {
-        send(`go depth ${depth}`);
-      }
+  //     // safety timeout (fallback)
+  //     const watchdog = setTimeout(
+  //       () => {
+  //         if (!resolved) {
+  //           cleanUp();
+  //           reject(new Error('Stockfish timeout'));
+  //         }
+  //       },
+  //       Math.max(movetimeMs ?? 0, 10000),
+  //     ); // at least 10s
+  //     // clear when resolved
+  //     const stopWatchdog = () => {
+  //       if (watchdog) clearTimeout(watchdog);
+  //     };
+  //     // patch resolve/reject to stop watchdog
+  //     const _resolve = resolve;
+  //     resolve = (v: BestMove) => {
+  //       stopWatchdog();
+  //       _resolve(v);
+  //     };
+  //     const _reject = reject;
+  //     reject = (e: any) => {
+  //       stopWatchdog();
+  //       _reject(e);
+  //     };
+  //   });
+  // }
 
-      // safety timeout (fallback)
-      const watchdog = setTimeout(
-        () => {
-          if (!resolved) {
-            cleanUp();
-            reject(new Error('Stockfish timeout'));
+  async getBestMoveFromFEN(fen: string, opts: EngineOptions): Promise<BestMove> {
+    const { depth = 15, skillLevel = 20 } = opts;
+    return new Promise((resolve, reject) => {
+      try {
+        const stockfish = spawn('stockfish');
+
+        stockfish.stderr.on('data', (data) => {
+          this.logger.error(`Stockfish error: ${data}`);
+        });
+
+        // stockfish.stdout.on('data', (data) => {
+        //   // const line = data.toString().trim();
+        //   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+        //   const line: string = typeof data === 'string' ? data : data?.line;
+
+        //   this.logger.debug(line); // for debugging
+
+        //   if (line.startsWith('bestmove')) {
+        //     const parts = line.split(/\s+/);
+        //     const uci = parts[1]; // e.g. e2e4 or e7e8q
+        //     const from = uci.slice(0, 2);
+        //     const to = uci.slice(2, 4);
+        //     const promotion = uci.length > 4 ? uci.slice(4) : undefined;
+        //     const san = uci;
+        //     resolve = true;
+        //     cleanUp();
+        //     resolve({ from, to, promotion, san });
+        //     stockfish.kill();
+        //   }
+        // });
+
+        stockfish.stdout.on('data', (data: Buffer) => {
+          const line = data.toString().trim();
+
+          this.logger.debug(line); // logs all Stockfish output
+
+          if (line.startsWith('bestmove')) {
+            const parts = line.split(/\s+/);
+            const uci = parts[1]; // e.g. "e2e4" or "e7e8q"
+            const from = uci.slice(0, 2);
+            const to = uci.slice(2, 4);
+            const promotion = uci.length > 4 ? uci.slice(4) : undefined;
+
+            // Resolve promise with move object
+            resolve({ from, to, promotion, san: uci });
+
+            stockfish.kill();
           }
-        },
-        Math.max(movetimeMs ?? 0, 10000),
-      ); // at least 10s
-      // clear when resolved
-      const stopWatchdog = () => {
-        if (watchdog) clearTimeout(watchdog);
-      };
-      // patch resolve/reject to stop watchdog
-      const _resolve = resolve;
-      resolve = (v: BestMove) => {
-        stopWatchdog();
-        _resolve(v);
-      };
-      const _reject = reject;
-      reject = (e: any) => {
-        stopWatchdog();
-        _reject(e);
-      };
+        });
+
+        // Initialize UCI
+        stockfish.stdin.write('uci\n');
+
+        // Set engine options (skill level)
+        stockfish.stdin.write(`setoption name Skill Level value ${skillLevel}\n`);
+
+        // Load position
+        stockfish.stdin.write(`position fen ${fen}\n`);
+
+        // Start calculation
+        stockfish.stdin.write(`go depth ${depth}\n`);
+      } catch (err) {
+        console.error(`[AI ERROR] Failed to get move for game ${err}`);
+        // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+        reject(err);
+      }
     });
   }
 

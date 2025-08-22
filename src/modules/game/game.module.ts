@@ -10,6 +10,8 @@ import { AuthModule } from '../auth/auth.module';
 import { LoggerModule } from 'src/logger/logger.module';
 import { AiModule } from 'src/ai/ai.module';
 import { GameGatewayModule } from 'src/gateway/gateway.module';
+import { AiListener } from './ai-listener.listener';
+import { GameGateway } from 'src/gateway/game.gateway';
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -22,7 +24,7 @@ import { GameGatewayModule } from 'src/gateway/gateway.module';
     LoggerModule,
   ],
   controllers: [GameController],
-  providers: [GameService],
+  providers: [GameService, AiListener, GameGateway],
   exports: [GameService], // ✅ still export GameService
 })
 export class GameModule {}

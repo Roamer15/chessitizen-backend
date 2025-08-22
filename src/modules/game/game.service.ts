@@ -86,12 +86,14 @@ export class GameService {
   }
 
   async startGame(userId: string, dto: StartGameDto): Promise<Game> {
-    this.logger.log(`Game starting for ${userId} with props: ${dto.vsAi}}`);
-    const color = dto.userColor;
+    this.logger.log(`Game starting for ${userId} with props: ${dto.vsAI}}`);
+    const color = dto.userColor ?? 'white';
+    const ai = dto.vsAI ?? true;
+    console.log(color, ai);
     const game = new this.gameModel({
       whitePlayer: color === 'white' ? new Types.ObjectId(userId) : null,
       blackPlayer: color === 'black' ? new Types.ObjectId(userId) : null,
-      vsAi: dto.vsAi,
+      vsAI: ai,
       userColor: color,
       aiDifficulty: dto.aiDifficulty,
       currentFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
@@ -130,6 +132,7 @@ export class GameService {
     }
 
     if (game.vsAI) {
+      console.log('emitted AI move');
       this.eventEmitter.emit('game.aiMove', {
         gameId: game._id,
         fen: game.currentFen,

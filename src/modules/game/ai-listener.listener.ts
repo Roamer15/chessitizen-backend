@@ -51,7 +51,7 @@ export class AiListener {
       await game.save();
 
       // ✅ Optional: emit socket update to clients
-      this.gameService.broadcastGameUpdate(game);
+      // this.gameService.broadcastGameUpdate(game);
       this.gameGateway.server.to(game._id.toString()).emit('aiMoveMade', {
         gameId: game._id,
         move: aiMove, // { from, to, promotion, san }

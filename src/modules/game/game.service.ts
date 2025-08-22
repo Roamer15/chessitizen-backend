@@ -67,7 +67,7 @@ export class GameService {
         opts = { skillLevel: 3, depth: 6 };
         break;
       case 'medium':
-        opts = { skillLevel: 7, depth: 9 };
+        opts = { skillLevel: 7, depth: 1 };
         break;
       case 'hard':
         opts = { skillLevel: 12, depth: 12 };
@@ -86,7 +86,7 @@ export class GameService {
   }
 
   async startGame(userId: string, dto: StartGameDto): Promise<Game> {
-    this.logger.log(`Game starting for ${userId} with props: ${dto.vsAI}}`);
+    this.logger.log(`Game starting for ${userId} with props: ${dto.vsAI}`);
     const color = dto.userColor ?? 'white';
     const ai = dto.vsAI ?? true;
     console.log(color, ai);

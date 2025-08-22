@@ -146,28 +146,6 @@ export class AiService {
         stockfish.stderr.on('data', (data) => {
           this.logger.error(`Stockfish error: ${data}`);
         });
-
-        // stockfish.stdout.on('data', (data) => {
-        //   // const line = data.toString().trim();
-        //   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-        //   const line: string = typeof data === 'string' ? data : data?.line;
-
-        //   this.logger.debug(line); // for debugging
-
-        //   if (line.startsWith('bestmove')) {
-        //     const parts = line.split(/\s+/);
-        //     const uci = parts[1]; // e.g. e2e4 or e7e8q
-        //     const from = uci.slice(0, 2);
-        //     const to = uci.slice(2, 4);
-        //     const promotion = uci.length > 4 ? uci.slice(4) : undefined;
-        //     const san = uci;
-        //     resolve = true;
-        //     cleanUp();
-        //     resolve({ from, to, promotion, san });
-        //     stockfish.kill();
-        //   }
-        // });
-
         stockfish.stdout.on('data', (data: Buffer) => {
           const line = data.toString().trim();
 
@@ -175,14 +153,16 @@ export class AiService {
 
           if (line.startsWith('bestmove')) {
             const parts = line.split(/\s+/);
-            const uci = parts[1]; // e.g. "e2e4" or "e7e8q"
+            const uci = parts[1];
+
+            // Ignore lines with "undefined" or invalid UCI
+            if (!uci || uci === '(none)') return;
+
             const from = uci.slice(0, 2);
             const to = uci.slice(2, 4);
             const promotion = uci.length > 4 ? uci.slice(4) : undefined;
 
-            // Resolve promise with move object
             resolve({ from, to, promotion, san: uci });
-
             stockfish.kill();
           }
         });

@@ -62,7 +62,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     const game = await this.gameService.startGame(userId, dto);
     await client.join(game._id.toString());
-    client.emit('gameStarted', game);
+    // client.emit('gameStarted', game);
     this.logger.log(`Emitting gameStarted for ${game._id} to room`);
     this.server.to(game._id.toString()).emit('gameStarted', game);
   }
@@ -81,7 +81,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       throw new WsException('Unauthenticated socket');
     }
     const game = await this.gameService.makeMove(data.gameId, userId, data.dto);
-    client.emit('moveMade', game);
+    // client.emit('moveMade', game);
     // Broadcast updated game state to everyone in the room
     this.server.to(game._id.toString()).emit('moveMade', game);
 

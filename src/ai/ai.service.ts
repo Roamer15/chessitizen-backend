@@ -137,6 +137,13 @@ export class AiService {
   //   });
   // }
 
+  // async getBestMoveFromAi(fen: string, opts: EngineOptions): Promise<BestMove> {
+  //   const { depth, skillLevel } = opts;
+  //   try {
+  //     const move = this.geminiService.generateChessMove(fen, skillLevel, depth);
+  //   } catch (err) {}
+  // }
+
   async getBestMoveFromFEN(fen: string, opts: EngineOptions): Promise<BestMove> {
     const { depth = 15, skillLevel = 20 } = opts;
     return new Promise((resolve, reject) => {

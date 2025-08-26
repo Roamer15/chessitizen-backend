@@ -89,7 +89,6 @@ export class GameService {
     this.logger.log(`Game starting for ${userId} with props: ${dto.vsAI}`);
     const color = dto.userColor ?? 'white';
     const ai = dto.vsAI ?? true;
-    console.log(color, ai);
     const game = new this.gameModel({
       whitePlayer: color === 'white' ? new Types.ObjectId(userId) : null,
       blackPlayer: color === 'black' ? new Types.ObjectId(userId) : null,
@@ -104,9 +103,6 @@ export class GameService {
 
   async makeMove(gameId: string, userId: string, dto: MakeMoveDto) {
     const { from, to, promotion } = dto;
-    console.log(
-      `[v0] makeMove called - GameID: ${gameId}, UserID: ${userId}, Move: ${from}-${to}, Timestamp: ${new Date().toISOString()}`,
-    );
     const game = await this.getGame(gameId);
 
     // const user = await this.getPlayer(userId);
@@ -136,7 +132,6 @@ export class GameService {
     }
 
     if (game.vsAI) {
-      console.log('emitted AI move');
       this.eventEmitter.emit('game.aiMove', {
         gameId: game._id,
         fen: game.currentFen,
@@ -166,8 +161,6 @@ export class GameService {
     game.currentFen = startingFen;
     game.moves = []; // Clear all moves
     game.gameStatus = GameStatus.ONGOING;
-
-    console.log(`Board reset for game ${gameId} to starting position`);
 
     // Save and broadcast the reset
     const savedGame = await game.save();

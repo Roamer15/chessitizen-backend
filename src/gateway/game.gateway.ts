@@ -78,9 +78,8 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
   ) {
     this.logger.log(
-      `[v0] WebSocket makeMove received - GameID: ${data.gameId}, ClientID: ${client.id}, Move: ${JSON.stringify(data.dto)}`,
+      `WebSocket makeMove received - GameID: ${data.gameId}, ClientID: ${client.id}, Move: ${JSON.stringify(data.dto)}`,
     );
-    console.log('I have been called');
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const userId = client.data?.user?.sub as string;
     if (!userId) {
@@ -88,8 +87,6 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     await client.join(data.gameId);
     const game = await this.gameService.makeMove(data.gameId, userId, data.dto);
-    // console.log(game);
-    // client.emit('moveMade', game);
     // Broadcast updated game state to everyone in the room
     this.server.to(game._id.toString()).emit('moveMade', game);
 
@@ -128,9 +125,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
    */
   @SubscribeMessage('resetBoard')
   async handleResetBoard(client: Socket, data: { gameId: string }) {
-    console.log(
-      `[v0] WebSocket resetBoard called - GameID: ${data.gameId}, ClientID: ${client.id}`,
-    );
+    this.logger.log(`WebSocket resetBoard called - GameID: ${data.gameId}, ClientID: ${client.id}`);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const userId = client.data?.user?.sub as string;
     if (!userId) {

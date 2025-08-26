@@ -23,17 +23,6 @@ export class GameController {
     return this.gameService.startGame(userId, dto);
   }
 
-  // Make a move in a game
-  // @Post(':gameId/move')
-  // async makeMove(
-  //   @Req() req: AuthRequest,
-  //   @Param('gameId') gameId: string,
-  //   @Body() dto: MakeMoveDto,
-  // ): Promise<Game> {
-  //   const userId = req.user['sub'];
-  //   return await this.gameService.makeMove(gameId, userId, dto);
-  // }
-
   // Get game state
   @Get(':gameId')
   async getGame(@Param('gameId') gameId: string): Promise<Game> {

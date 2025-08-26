@@ -1,7 +1,7 @@
 import { Controller, Post, Body, Param, Get, UseGuards, Req } from '@nestjs/common';
 import { GameService } from './game.service';
 import { StartGameDto } from './dto/start-game.dto';
-import { MakeMoveDto } from './dto/make-move.dto';
+// import { MakeMoveDto } from './dto/make-move.dto';
 import { Game } from 'src/schema/game.schema';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -21,17 +21,6 @@ export class GameController {
   async startGame(@Req() req: AuthRequest, @Body() dto: StartGameDto): Promise<Game> {
     const userId = req.user.sub; // assuming JWT payload has `sub`
     return this.gameService.startGame(userId, dto);
-  }
-
-  // Make a move in a game
-  @Post(':gameId/move')
-  async makeMove(
-    @Req() req: AuthRequest,
-    @Param('gameId') gameId: string,
-    @Body() dto: MakeMoveDto,
-  ): Promise<Game> {
-    const userId = req.user['sub'];
-    return this.gameService.makeMove(gameId, userId, dto);
   }
 
   // Get game state

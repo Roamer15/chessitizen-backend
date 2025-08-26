@@ -11,8 +11,14 @@ import { Color, GameLevel, GameStatus, ResultReason, Winner } from 'src/shared/e
 export class Game extends Document {
   _id: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
-  userId: Types.ObjectId;
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  whitePlayer: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  blackPlayer: Types.ObjectId;
+
+  @Prop({ default: false })
+  vsAI: boolean;
 
   @Prop({ required: true, enum: Object.values(Color), default: Color.WHITE })
   userColor: Color;

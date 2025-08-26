@@ -1,4 +1,5 @@
 // game.gateway.ts
+import { forwardRef, Inject, UseGuards } from '@nestjs/common';
 import {
   SubscribeMessage,
   WebSocketGateway,
@@ -13,17 +14,20 @@ import { Server, Socket } from 'socket.io';
 import { LoggerService } from 'src/logger/logger.service';
 import { MakeMoveDto } from 'src/modules/game/dto/make-move.dto';
 import { StartGameDto } from 'src/modules/game/dto/start-game.dto';
-import { GameService } from 'src/modules/game/game.service';
 import { GameStatus, ResultReason, Winner } from 'src/shared/enum/game.enum';
+import { WsAuthGuard } from './guard/ws-auth.guard';
+import { GameService } from '../modules/game/game.service';
 
 @WebSocketGateway({
   cors: { origin: '*' }, // adjust for production
 })
+@UseGuards(WsAuthGuard)
 export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
   constructor(
+    @Inject(forwardRef(() => GameService))
     private readonly gameService: GameService,
     private readonly logger: LoggerService,
   ) {}
@@ -41,6 +45,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
    */
   @SubscribeMessage('joinGame')
   async handleJoinGame(@MessageBody() gameId: string, @ConnectedSocket() client: Socket) {
+    this.logger.log(`[v0] WebSocket joinGame called - GameID: ${gameId}, ClientID: ${client.id}`);
     await client.join(gameId);
     this.server.to(gameId).emit('playerJoined', { playerId: client.id });
   }
@@ -48,8 +53,10 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   /**
    * Start a new game vs AI
    */
+  @SubscribeMessage('startGame')
   async handleStartGame(@MessageBody() dto: StartGameDto, @ConnectedSocket() client: Socket) {
     // Assumes a WS auth guard/middleware attaches the JWT payload to client.data.user
+    this.logger.log(`[v0] WebSocket startGame called - ClientID: ${client.id}`);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const userId = client.data?.user?.sub as string;
     if (!userId) {
@@ -57,21 +64,28 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     const game = await this.gameService.startGame(userId, dto);
     await client.join(game._id.toString());
+    // client.emit('gameStarted', game);
+    this.logger.log(`Emitting gameStarted for ${game._id} to room`);
     this.server.to(game._id.toString()).emit('gameStarted', game);
   }
 
   /**
    * Handle player moves
    */
+  @SubscribeMessage('makeMove')
   async handleMakeMove(
     @MessageBody() data: { gameId: string; dto: MakeMoveDto },
     @ConnectedSocket() client: Socket,
   ) {
+    this.logger.log(
+      `WebSocket makeMove received - GameID: ${data.gameId}, ClientID: ${client.id}, Move: ${JSON.stringify(data.dto)}`,
+    );
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const userId = client.data?.user?.sub as string;
     if (!userId) {
       throw new WsException('Unauthenticated socket');
     }
+    await client.join(data.gameId);
     const game = await this.gameService.makeMove(data.gameId, userId, data.dto);
     // Broadcast updated game state to everyone in the room
     this.server.to(game._id.toString()).emit('moveMade', game);
@@ -99,7 +113,45 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const validatedReason = data.reason as ResultReason;
     const validatedWinner = data.winner as Winner;
+
+    await client.join(data.gameId);
     const game = await this.gameService.endGame(data.gameId, validatedReason, validatedWinner);
+    // client.emit('gameEnded', game);
     this.server.to(game._id.toString()).emit('gameEnded', game);
+  }
+
+  /**
+   * Reset the chess board to original starting position
+   */
+  @SubscribeMessage('resetBoard')
+  async handleResetBoard(client: Socket, data: { gameId: string }) {
+    this.logger.log(`WebSocket resetBoard called - GameID: ${data.gameId}, ClientID: ${client.id}`);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const userId = client.data?.user?.sub as string;
+    if (!userId) {
+      throw new WsException('Unauthenticated socket');
+    }
+
+    await client.join(data.gameId);
+    const game = await this.gameService.resetBoard(data.gameId);
+
+    // Broadcast the reset board state to all clients in the room
+    this.server.to(game._id.toString()).emit('boardReset', game);
+    this.logger.log(`Board reset for game ${data.gameId}`);
+  }
+
+  //PVP event
+  emitGameUpdate(gameId: string, payload: any) {
+    this.server.to(gameId).emit('gameUpdate', payload);
+    // Also emit aiMoveMade for compatibility with client expectations
+    this.server.to(gameId).emit('aiMoveMade', {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+      gameId: payload.gameId,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+      move: payload.moves[payload.moves.length - 1], // Last move
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+      currentFen: payload.currentFen,
+      explanation: 'AI move completed',
+    });
   }
 }

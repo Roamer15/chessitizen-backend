@@ -168,6 +168,44 @@ export class GameService {
 
     return savedGame;
   }
+
+  async undoMove(gameId: string, userId: string): Promise<Game> {
+    const game = await this.getGame(gameId);
+
+    if (game.gameStatus !== GameStatus.ONGOING) {
+      throwHttpError(ErrorCode.GAME_INVALID);
+    }
+
+    // Check if there are moves to undo
+    if (game.moves.length === 0) {
+      throwHttpError(ErrorCode.INVALID_MOVE); // or custom "NO_MOVES_TO_UNDO"
+    }
+
+    // Optional: enforce turn ownership (only the player who just moved can undo)
+    const chess = new Chess(game.currentFen);
+    const lastMove = game.moves[game.moves.length - 1];
+    const lastTurnColor = chess.turn() === 'w' ? 'blackPlayer' : 'whitePlayer';
+
+    if (game[lastTurnColor]?.toString() !== userId.toString()) {
+      throwHttpError(ErrorCode.NO_MOVES_TO_UNDO);
+    }
+
+    // Remove last move
+    game.moves.pop();
+
+    // Reset FEN
+    if (game.moves.length > 0) {
+      game.currentFen = lastMove.fen;
+    } else {
+      game.currentFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+    }
+
+    const savedGame = await game.save();
+    this.broadcastGameUpdate(savedGame);
+
+    return savedGame;
+  }
+
   broadcastGameUpdate(game: Game) {
     const payload = {
       gameId: game._id,

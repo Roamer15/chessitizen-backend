@@ -73,4 +73,8 @@ export const ErrorMessages: Record<ErrorCode, { message: string; status: HttpSta
     message: 'Not your turn',
     status: HttpStatus.FORBIDDEN,
   },
+  [ErrorCode.NO_MOVES_TO_UNDO]: {
+    message: 'No moves available for undo',
+    status: HttpStatus.CONFLICT,
+  },
 };

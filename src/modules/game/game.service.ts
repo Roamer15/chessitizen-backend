@@ -156,6 +156,25 @@ export class GameService {
     return game.save();
   }
 
+  async resetBoard(gameId: string): Promise<Game> {
+    const game = await this.getGame(gameId);
+
+    // Reset to starting position FEN
+    const startingFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+    // Update game state
+    game.currentFen = startingFen;
+    game.moves = []; // Clear all moves
+    game.gameStatus = GameStatus.ONGOING;
+
+    console.log(`Board reset for game ${gameId} to starting position`);
+
+    // Save and broadcast the reset
+    const savedGame = await game.save();
+    this.broadcastGameUpdate(savedGame);
+
+    return savedGame;
+  }
   broadcastGameUpdate(game: Game) {
     const payload = {
       gameId: game._id,

@@ -123,8 +123,40 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(game._id.toString()).emit('gameEnded', game);
   }
 
+  /**
+   * Reset the chess board to original starting position
+   */
+  @SubscribeMessage('resetBoard')
+  async handleResetBoard(client: Socket, data: { gameId: string }) {
+    console.log(
+      `[v0] WebSocket resetBoard called - GameID: ${data.gameId}, ClientID: ${client.id}`,
+    );
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const userId = client.data?.user?.sub as string;
+    if (!userId) {
+      throw new WsException('Unauthenticated socket');
+    }
+
+    await client.join(data.gameId);
+    const game = await this.gameService.resetBoard(data.gameId);
+
+    // Broadcast the reset board state to all clients in the room
+    this.server.to(game._id.toString()).emit('boardReset', game);
+    this.logger.log(`Board reset for game ${data.gameId}`);
+  }
+
   //PVP event
   emitGameUpdate(gameId: string, payload: any) {
     this.server.to(gameId).emit('gameUpdate', payload);
+    // Also emit aiMoveMade for compatibility with client expectations
+    this.server.to(gameId).emit('aiMoveMade', {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+      gameId: payload.gameId,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+      move: payload.moves[payload.moves.length - 1], // Last move
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+      currentFen: payload.currentFen,
+      explanation: 'AI move completed',
+    });
   }
 }

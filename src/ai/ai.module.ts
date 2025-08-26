@@ -5,9 +5,10 @@ import { GameModule } from '../modules/game/game.module'; // Adjust the import p
 import { LoggerModule } from 'src/logger/logger.module';
 import { GeminiService } from './gemini.service';
 import { LlmChessService } from './llm-chess.service';
+import { AuthModule } from 'src/modules/auth/auth.module';
 
 @Module({
-  imports: [forwardRef(() => GameModule), LoggerModule],
+  imports: [forwardRef(() => GameModule), AuthModule, LoggerModule],
   providers: [AiService, GeminiService, LlmChessService],
   controllers: [AiController],
   exports: [AiService, LlmChessService],

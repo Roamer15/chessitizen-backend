@@ -45,6 +45,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
    */
   @SubscribeMessage('joinGame')
   async handleJoinGame(@MessageBody() gameId: string, @ConnectedSocket() client: Socket) {
+    this.logger.log(`[v0] WebSocket joinGame called - GameID: ${gameId}, ClientID: ${client.id}`);
     await client.join(gameId);
     this.server.to(gameId).emit('playerJoined', { playerId: client.id });
   }
@@ -55,6 +56,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('startGame')
   async handleStartGame(@MessageBody() dto: StartGameDto, @ConnectedSocket() client: Socket) {
     // Assumes a WS auth guard/middleware attaches the JWT payload to client.data.user
+    this.logger.log(`[v0] WebSocket startGame called - ClientID: ${client.id}`);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const userId = client.data?.user?.sub as string;
     if (!userId) {
@@ -75,12 +77,18 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { gameId: string; dto: MakeMoveDto },
     @ConnectedSocket() client: Socket,
   ) {
+    this.logger.log(
+      `[v0] WebSocket makeMove received - GameID: ${data.gameId}, ClientID: ${client.id}, Move: ${JSON.stringify(data.dto)}`,
+    );
+    console.log('I have been called');
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const userId = client.data?.user?.sub as string;
     if (!userId) {
       throw new WsException('Unauthenticated socket');
     }
+    await client.join(data.gameId);
     const game = await this.gameService.makeMove(data.gameId, userId, data.dto);
+    // console.log(game);
     // client.emit('moveMade', game);
     // Broadcast updated game state to everyone in the room
     this.server.to(game._id.toString()).emit('moveMade', game);
@@ -108,8 +116,10 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const validatedReason = data.reason as ResultReason;
     const validatedWinner = data.winner as Winner;
+
+    await client.join(data.gameId);
     const game = await this.gameService.endGame(data.gameId, validatedReason, validatedWinner);
-    client.emit('gameEnded', game);
+    // client.emit('gameEnded', game);
     this.server.to(game._id.toString()).emit('gameEnded', game);
   }
 

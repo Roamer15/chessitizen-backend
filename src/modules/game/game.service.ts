@@ -104,7 +104,11 @@ export class GameService {
 
   async makeMove(gameId: string, userId: string, dto: MakeMoveDto) {
     const { from, to, promotion } = dto;
+    console.log(
+      `[v0] makeMove called - GameID: ${gameId}, UserID: ${userId}, Move: ${from}-${to}, Timestamp: ${new Date().toISOString()}`,
+    );
     const game = await this.getGame(gameId);
+
     // const user = await this.getPlayer(userId);
     if (game.gameStatus !== GameStatus.ONGOING) {
       throwHttpError(ErrorCode.GAME_INVALID);
@@ -145,11 +149,10 @@ export class GameService {
 
   async endGame(gameId: string, reason: ResultReason, winner: Winner): Promise<Game> {
     const game = await this.getGame(gameId);
-
     game.gameStatus = GameStatus.ENDED;
     game.endedAt = new Date();
     game.result = { outcome: reason, winner };
-
+    this.logger.log(`Ending game with reason: ${reason} and winner ${winner}`);
     return game.save();
   }
 

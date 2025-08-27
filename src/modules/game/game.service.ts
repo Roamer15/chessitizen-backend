@@ -86,7 +86,23 @@ export class GameService {
   }
 
   async startGame(userId: string, dto: StartGameDto): Promise<Game> {
-    this.logger.log(`Game starting for ${userId} with props: ${dto.vsAI}`);
+    this.logger.log(`Game starting for ${userId} with props: ${JSON.stringify(dto)}`);
+
+    // Multiplayer game
+    if (dto.isMultiplayer) {
+      const game = new this.gameModel({
+        whitePlayer: new Types.ObjectId(userId),
+        blackPlayer: null,
+        vsAI: false,
+        isMultiplayer: true,
+        gameStatus: GameStatus.WAITING, // waiting for another player
+        currentFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+      });
+
+      return await game.save();
+    }
+
+    // AI game
     const color = dto.userColor ?? 'white';
     const ai = dto.vsAI ?? true;
     const game = new this.gameModel({
@@ -95,24 +111,46 @@ export class GameService {
       vsAI: ai,
       userColor: color,
       aiDifficulty: dto.aiDifficulty,
+      isMultiplayer: false,
+      gameStatus: GameStatus.ONGOING,
       currentFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
     });
-    // this.logger.log(game.save());
     return await game.save();
+  }
+
+  async joinGame(gameId: string, userId: string): Promise<Game> {
+    const game = await this.getGame(gameId);
+
+    if (!game.isMultiplayer || (game.whitePlayer && game.blackPlayer)) {
+      throwHttpError(ErrorCode.GAME_INVALID); // Not joinable
+    }
+
+    if (game.whitePlayer?.toString() === userId.toString()) {
+      throwHttpError(ErrorCode.GAME_INVALID); // Can't join your own game
+    }
+
+    game.blackPlayer = new Types.ObjectId(userId);
+    game.gameStatus = GameStatus.ONGOING;
+
+    const updatedGame = await game.save();
+
+    // Notify clients game started
+    this.emitGameStart(updatedGame._id.toString(), updatedGame);
+
+    return updatedGame;
   }
 
   async makeMove(gameId: string, userId: string, dto: MakeMoveDto) {
     const { from, to, promotion } = dto;
     const game = await this.getGame(gameId);
 
-    // const user = await this.getPlayer(userId);
     if (game.gameStatus !== GameStatus.ONGOING) {
       throwHttpError(ErrorCode.GAME_INVALID);
     }
 
     const chess = new Chess(game.currentFen);
-
     const turnColor = chess.turn() === 'w' ? 'whitePlayer' : 'blackPlayer';
+
     if (game[turnColor]?.toString() !== userId.toString()) {
       throwHttpError(ErrorCode.NOT_YOUR_TURN);
     }
@@ -139,7 +177,10 @@ export class GameService {
       });
     }
 
-    return game.save();
+    const savedGame = await game.save();
+    this.broadcastGameUpdate(savedGame);
+
+    return savedGame;
   }
 
   async endGame(gameId: string, reason: ResultReason, winner: Winner): Promise<Game> {
@@ -153,16 +194,12 @@ export class GameService {
 
   async resetBoard(gameId: string): Promise<Game> {
     const game = await this.getGame(gameId);
-
-    // Reset to starting position FEN
     const startingFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
-    // Update game state
     game.currentFen = startingFen;
-    game.moves = []; // Clear all moves
+    game.moves = [];
     game.gameStatus = GameStatus.ONGOING;
 
-    // Save and broadcast the reset
     const savedGame = await game.save();
     this.broadcastGameUpdate(savedGame);
 
@@ -176,12 +213,10 @@ export class GameService {
       throwHttpError(ErrorCode.GAME_INVALID);
     }
 
-    // Check if there are moves to undo
     if (game.moves.length === 0) {
-      throwHttpError(ErrorCode.INVALID_MOVE); // or custom "NO_MOVES_TO_UNDO"
+      throwHttpError(ErrorCode.INVALID_MOVE); // No moves to undo
     }
 
-    // Optional: enforce turn ownership (only the player who just moved can undo)
     const chess = new Chess(game.currentFen);
     const lastMove = game.moves[game.moves.length - 1];
     const lastTurnColor = chess.turn() === 'w' ? 'blackPlayer' : 'whitePlayer';
@@ -190,10 +225,8 @@ export class GameService {
       throwHttpError(ErrorCode.NO_MOVES_TO_UNDO);
     }
 
-    // Remove last move
     game.moves.pop();
 
-    // Reset FEN
     if (game.moves.length > 0) {
       game.currentFen = lastMove.fen;
     } else {
@@ -213,8 +246,10 @@ export class GameService {
       moves: game.moves,
       status: game.gameStatus,
     };
-
-    // emit to all clients in this game room
     this.gameGateway.emitGameUpdate(game._id.toString(), payload);
+  }
+
+  emitGameStart(gameId: string, game: Game) {
+    this.gameGateway.server.to(gameId).emit('gameStarted', game);
   }
 }

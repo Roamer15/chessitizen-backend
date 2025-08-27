@@ -1,4 +1,3 @@
-// game.gateway.ts
 import { forwardRef, Inject, UseGuards } from '@nestjs/common';
 import {
   SubscribeMessage,
@@ -41,7 +40,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   /**
-   * Player joins a game room
+   * Legacy: Player joins a game room (works for AI or multiplayer spectators)
    */
   @SubscribeMessage('joinGame')
   async handleJoinGame(@MessageBody() gameId: string, @ConnectedSocket() client: Socket) {
@@ -51,22 +50,54 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   /**
-   * Start a new game vs AI
+   * Player joins a multiplayer game as the second player
+   */
+  @SubscribeMessage('joinMultiplayerGame')
+  async handleJoinMultiplayerGame(
+    @MessageBody() gameId: string,
+    @ConnectedSocket() client: Socket,
+  ) {
+    this.logger.log(
+      `[v1] WebSocket joinMultiplayerGame called - GameID: ${gameId}, ClientID: ${client.id}`,
+    );
+
+    const userId = client.data?.user?.sub as string;
+    if (!userId) throw new WsException('Unauthenticated socket');
+
+    if (!client.rooms.has(gameId)) {
+      await client.join(gameId);
+    }
+
+    const game = await this.gameService.joinGame(gameId, userId);
+
+    this.server.to(gameId).emit('playerJoined', {
+      game,
+      player: userId,
+      message: `Player ${userId} joined the game.`,
+    });
+  }
+
+  /**
+   * Start a new game (vs AI or multiplayer)
    */
   @SubscribeMessage('startGame')
   async handleStartGame(@MessageBody() dto: StartGameDto, @ConnectedSocket() client: Socket) {
-    // Assumes a WS auth guard/middleware attaches the JWT payload to client.data.user
-    this.logger.log(`[v0] WebSocket startGame called - ClientID: ${client.id}`);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    this.logger.log(`[v1] WebSocket startGame called - ClientID: ${client.id}`);
     const userId = client.data?.user?.sub as string;
-    if (!userId) {
-      throw new WsException('Unauthenticated socket');
-    }
+    if (!userId) throw new WsException('Unauthenticated socket');
+
     const game = await this.gameService.startGame(userId, dto);
     await client.join(game._id.toString());
-    // client.emit('gameStarted', game);
-    this.logger.log(`Emitting gameStarted for ${game._id} to room`);
-    this.server.to(game._id.toString()).emit('gameStarted', game);
+
+    if (game.isMultiplayer) {
+      this.server.to(game._id.toString()).emit('gameWaiting', {
+        gameId: game._id,
+        message: 'Game created, waiting for another player to join.',
+      });
+    } else {
+      this.logger.log(`Emitting gameStarted for ${game._id} to room`);
+      this.server.to(game._id.toString()).emit('gameStarted', game);
+    }
   }
 
   /**
@@ -80,17 +111,14 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.logger.log(
       `WebSocket makeMove received - GameID: ${data.gameId}, ClientID: ${client.id}, Move: ${JSON.stringify(data.dto)}`,
     );
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+
     const userId = client.data?.user?.sub as string;
-    if (!userId) {
-      throw new WsException('Unauthenticated socket');
-    }
+    if (!userId) throw new WsException('Unauthenticated socket');
+
     await client.join(data.gameId);
     const game = await this.gameService.makeMove(data.gameId, userId, data.dto);
-    // Broadcast updated game state to everyone in the room
-    this.server.to(game._id.toString()).emit('moveMade', game);
 
-    // if game ended, notify all players
+    // Service already broadcasts updates via emitGameUpdate
     if (game.gameStatus === GameStatus.ENDED) {
       this.server.to(game._id.toString()).emit('gameEnded', game);
     }
@@ -116,7 +144,6 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     await client.join(data.gameId);
     const game = await this.gameService.endGame(data.gameId, validatedReason, validatedWinner);
-    // client.emit('gameEnded', game);
     this.server.to(game._id.toString()).emit('gameEnded', game);
   }
 
@@ -124,34 +151,22 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * Reset the chess board to original starting position
    */
   @SubscribeMessage('resetBoard')
-  async handleResetBoard(client: Socket, data: { gameId: string }) {
+  async handleResetBoard(@MessageBody() data: { gameId: string }, @ConnectedSocket() client: Socket) {
     this.logger.log(`WebSocket resetBoard called - GameID: ${data.gameId}, ClientID: ${client.id}`);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const userId = client.data?.user?.sub as string;
-    if (!userId) {
-      throw new WsException('Unauthenticated socket');
-    }
+    if (!userId) throw new WsException('Unauthenticated socket');
 
     await client.join(data.gameId);
     const game = await this.gameService.resetBoard(data.gameId);
 
-    // Broadcast the reset board state to all clients in the room
     this.server.to(game._id.toString()).emit('boardReset', game);
     this.logger.log(`Board reset for game ${data.gameId}`);
   }
 
-  //PVP event
+  /**
+   * Broadcast game updates (used by GameService)
+   */
   emitGameUpdate(gameId: string, payload: any) {
-    this.server.to(gameId).emit('gameUpdate', payload);
-    // Also emit aiMoveMade for compatibility with client expectations
-    this.server.to(gameId).emit('aiMoveMade', {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      gameId: payload.gameId,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      move: payload.moves[payload.moves.length - 1], // Last move
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      currentFen: payload.currentFen,
-      explanation: 'AI move completed',
-    });
+    this.server.to(gameId).emit('moveMade', payload);
   }
 }

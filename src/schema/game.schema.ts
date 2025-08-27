@@ -66,7 +66,11 @@ export class Game extends Document {
     enum: Object.values(GameLevel),
     default: GameLevel.MEDIUM,
   })
+
   aiDifficulty: GameLevel;
+
+    @Prop({ default: false })
+  isMultiplayer: boolean;
 }
 
 export const GameSchema = SchemaFactory.createForClass(Game);

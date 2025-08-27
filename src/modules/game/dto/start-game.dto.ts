@@ -23,4 +23,17 @@ export class StartGameDto {
     return value === 'true' || value === true;
   })
   vsAI?: boolean;
+
+  //   @IsOptional()
+  // @IsEnum(PlayerColor)
+  // userColor?: PlayerColor;
+
+  // Add a new property to indicate if the game is for multiplayer
+  @IsOptional()
+  @IsBoolean()
+  isMultiplayer?: boolean;
+
+  // You might also want to add a way for players to specify a room ID
+  @IsOptional()
+  roomId?: string;
 }

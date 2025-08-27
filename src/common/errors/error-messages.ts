@@ -77,4 +77,8 @@ export const ErrorMessages: Record<ErrorCode, { message: string; status: HttpSta
     message: 'No moves available for undo',
     status: HttpStatus.CONFLICT,
   },
+  [ErrorCode.UNAUTHORIZED_MOVE]: {
+    message: 'You cannot undo this move',
+    status: HttpStatus.BAD_REQUEST,
+  },
 };

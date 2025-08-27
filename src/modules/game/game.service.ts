@@ -182,7 +182,7 @@ export class GameService {
       }
 
       // Check if there are moves to undo
-      if (game.moves.length === 0) {
+      if (game.moves.length < 2) {
         throwHttpError(ErrorCode.NO_MOVES_TO_UNDO);
       }
 

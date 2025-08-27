@@ -79,6 +79,10 @@ export const ErrorMessages: Record<ErrorCode, { message: string; status: HttpSta
   },
   [ErrorCode.UNAUTHORIZED_MOVE]: {
     message: 'You cannot undo this move',
-    status: HttpStatus.BAD_REQUEST,
+    status: HttpStatus.UNAUTHORIZED,
+  },
+  [ErrorCode.UNDO_NOT_ALLOWED]: {
+    message: 'Undo allowed only in games vs AI',
+    status: HttpStatus.UNAUTHORIZED,
   },
 };

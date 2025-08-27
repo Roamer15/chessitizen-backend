@@ -159,7 +159,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
    */
   @SubscribeMessage('undoMove')
   async handleUndoMove(client: Socket, data: { gameId: string }) {
-    this.logger.log(`Websocket undo move`);
+    this.logger.log(`WebSocket makeMove received - GameID: ${data.gameId}, ClientID: ${client.id}`);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const userId = client.data?.user?.sub as string;
     if (!userId) {
@@ -175,7 +175,11 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('getHistory')
   async handleGameHistory(client: Socket, data: { gameId: string }) {
     this.logger.log('Retrieveing game history');
-
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const userId = client.data?.user?.sub as string;
+    if (!userId) {
+      throw new WsException('Unauthenticated socket');
+    }
     await client.join(data.gameId);
     const game = await this.gameService.getMoveHistory(data.gameId);
     const moves = game.moves;

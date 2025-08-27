@@ -7,7 +7,7 @@ import { StartGameDto } from './dto/start-game.dto';
 import { throwHttpError } from 'src/common/errors/http-exception.helper';
 import { ErrorCode } from 'src/common/errors/error-codes.enum';
 import { MakeMoveDto } from './dto/make-move.dto';
-import { GameStatus, ResultReason, Winner } from 'src/shared/enum/game.enum';
+import { Color, GameStatus, ResultReason, Winner } from 'src/shared/enum/game.enum';
 import { Chess } from 'chess.js';
 import { User } from 'src/schema/user.schema';
 import { AiService } from 'src/ai/ai.service';
@@ -168,29 +168,44 @@ export class GameService {
 
     return savedGame;
   }
-
   async undoMove(gameId: string, userId: string): Promise<Game> {
     try {
       const game = await this.getGame(gameId);
+
+      // (1) Require game.vsAI to be true before allowing undo
+      if (!game.vsAI) {
+        throwHttpError(ErrorCode.UNDO_NOT_ALLOWED);
+      }
+
       if (game.gameStatus !== GameStatus.ONGOING) {
         throwHttpError(ErrorCode.GAME_INVALID);
       }
 
       // Check if there are moves to undo
       if (game.moves.length === 0) {
-        throwHttpError(ErrorCode.NO_MOVES_TO_UNDO); // or custom "NO_MOVES_TO_UNDO"
+        throwHttpError(ErrorCode.NO_MOVES_TO_UNDO);
       }
 
-      const lastMove = game.moves[game.moves.length - 1];
-      if (game.whitePlayer?.toString() !== userId.toString()) {
+      // (2) Determine the human player based on game.userColor
+      let humanPlayerId: string | undefined;
+      if (game.userColor === Color.WHITE) {
+        humanPlayerId = game.whitePlayer?.toString();
+      } else if (game.userColor === Color.BLACK) {
+        humanPlayerId = game.blackPlayer?.toString();
+      }
+
+      // (3) Compare derived player id to requesting userId
+      if (humanPlayerId !== userId.toString()) {
         throwHttpError(ErrorCode.UNAUTHORIZED_MOVE);
       }
-      // Remove last move
+
       game.moves.pop();
       game.moves.pop();
-      // Reset FEN
+
+      // Reset FEN - need to recalculate based on remaining moves
       if (game.moves.length > 0) {
-        game.currentFen = lastMove.fen;
+        const lastRemainingMove = game.moves[game.moves.length - 1];
+        game.currentFen = lastRemainingMove.fen;
       } else {
         game.currentFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
       }
@@ -201,11 +216,9 @@ export class GameService {
       return savedGame;
     } catch (err) {
       console.error(err);
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      throw new Error('Error undoing', err);
+      throw err;
     }
   }
-
   async getMoveHistory(gameId: string): Promise<Game> {
     if (!gameId || !isValidObjectId(gameId)) {
       this.logger.warn(`Invalid gameId provided: ${gameId}`);

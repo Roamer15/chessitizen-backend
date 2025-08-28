@@ -118,11 +118,5 @@ export class AiListener {
     await game.save();
     // Broadcast
     this.gameService.broadcastGameUpdate(game);
-    // this.gameGateway.server.to(game._id.toString()).emit('aiMoveMade', {
-    //   gameId: game._id,
-    //   move: { from: res.from, to: res.to, san: res.san, promotion: promotion ?? null },
-    //   currentFen: game.currentFen,
-    //   explanation,
-    // });
   }
 }

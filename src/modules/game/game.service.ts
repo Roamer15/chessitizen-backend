@@ -1,13 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { isValidObjectId, Model, Types } from 'mongoose';
 import { LoggerService } from 'src/logger/logger.service';
 import { Game } from 'src/schema/game.schema';
 import { StartGameDto } from './dto/start-game.dto';
 import { throwHttpError } from 'src/common/errors/http-exception.helper';
 import { ErrorCode } from 'src/common/errors/error-codes.enum';
 import { MakeMoveDto } from './dto/make-move.dto';
-import { GameStatus, ResultReason, Winner } from 'src/shared/enum/game.enum';
+import { Color, GameStatus, ResultReason, Winner } from 'src/shared/enum/game.enum';
 import { Chess } from 'chess.js';
 import { User } from 'src/schema/user.schema';
 import { AiService } from 'src/ai/ai.service';
@@ -168,42 +168,86 @@ export class GameService {
 
     return savedGame;
   }
-
   async undoMove(gameId: string, userId: string): Promise<Game> {
-    const game = await this.getGame(gameId);
+    try {
+      const game = await this.getGame(gameId);
 
-    if (game.gameStatus !== GameStatus.ONGOING) {
-      throwHttpError(ErrorCode.GAME_INVALID);
+      // (1) Require game.vsAI to be true before allowing undo
+      if (!game.vsAI) {
+        throwHttpError(ErrorCode.UNDO_NOT_ALLOWED);
+      }
+
+      if (game.gameStatus !== GameStatus.ONGOING) {
+        throwHttpError(ErrorCode.GAME_INVALID);
+      }
+
+      // Check if there are moves to undo
+      if (game.moves.length < 2) {
+        throwHttpError(ErrorCode.NO_MOVES_TO_UNDO);
+      }
+
+      // (2) Determine the human player based on game.userColor
+      let humanPlayerId: string | undefined;
+      if (game.userColor === Color.WHITE) {
+        humanPlayerId = game.whitePlayer?.toString();
+      } else if (game.userColor === Color.BLACK) {
+        humanPlayerId = game.blackPlayer?.toString();
+      }
+
+      // (3) Compare derived player id to requesting userId
+      if (humanPlayerId !== userId.toString()) {
+        throwHttpError(ErrorCode.UNAUTHORIZED_MOVE);
+      }
+
+      game.moves.pop();
+      game.moves.pop();
+
+      // Reset FEN - need to recalculate based on remaining moves
+      if (game.moves.length > 0) {
+        const lastRemainingMove = game.moves[game.moves.length - 1];
+        game.currentFen = lastRemainingMove.fen;
+      } else {
+        game.currentFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+      }
+
+      const savedGame = await game.save();
+      this.broadcastGameUpdate(savedGame);
+
+      return savedGame;
+    } catch (err) {
+      console.error(err);
+      throw err;
     }
-
-    // Check if there are moves to undo
-    if (game.moves.length === 0) {
-      throwHttpError(ErrorCode.INVALID_MOVE); // or custom "NO_MOVES_TO_UNDO"
+  }
+  async getMoveHistory(gameId: string): Promise<Game> {
+    if (!gameId || !isValidObjectId(gameId)) {
+      this.logger.warn(`Invalid gameId provided: ${gameId}`);
+      throw new BadRequestException('Invalid game ID format');
     }
+    try {
+      this.logger.debug(`Fetching move history for game: ${gameId}`);
 
-    // Optional: enforce turn ownership (only the player who just moved can undo)
-    const chess = new Chess(game.currentFen);
-    const lastMove = game.moves[game.moves.length - 1];
-    const lastTurnColor = chess.turn() === 'w' ? 'blackPlayer' : 'whitePlayer';
+      const game = await this.gameModel.findById(gameId).select('moves').lean().exec();
 
-    if (game[lastTurnColor]?.toString() !== userId.toString()) {
-      throwHttpError(ErrorCode.NO_MOVES_TO_UNDO);
+      if (!game) {
+        this.logger.warn(`Game not found with ID: ${gameId}`);
+        throwHttpError(ErrorCode.GAME_NOT_FOUND);
+      }
+
+      this.logger.debug(`Retrieved ${game.moves.length} moves for game: ${gameId}`);
+
+      return game;
+    } catch (error) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
+      this.logger.error(`Error fetching move history for game ${gameId}:`, error.stack);
+
+      // Re-throw appropriate exceptions
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+
+      throw new Error('Failed to retrieve move history');
     }
-
-    // Remove last move
-    game.moves.pop();
-
-    // Reset FEN
-    if (game.moves.length > 0) {
-      game.currentFen = lastMove.fen;
-    } else {
-      game.currentFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
-    }
-
-    const savedGame = await game.save();
-    this.broadcastGameUpdate(savedGame);
-
-    return savedGame;
   }
 
   broadcastGameUpdate(game: Game) {

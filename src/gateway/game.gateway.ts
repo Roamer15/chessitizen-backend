@@ -18,6 +18,20 @@ import { GameStatus, ResultReason, Winner } from 'src/shared/enum/game.enum';
 import { WsAuthGuard } from './guard/ws-auth.guard';
 import { GameService } from '../modules/game/game.service';
 
+interface Move {
+  from: string;
+  to: string;
+  fen: string;
+  san?: string;
+  timestamp?: Date;
+}
+
+interface GameData {
+  gameId: string;
+  moves: Move[];
+  fen: string;
+}
+
 @WebSocketGateway({
   cors: { origin: '*' }, // adjust for production
 })
@@ -140,17 +154,46 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.logger.log(`Board reset for game ${data.gameId}`);
   }
 
+  /**
+   * Undo a move when playing against Ai
+   */
+  @SubscribeMessage('undoMove')
+  async handleUndoMove(client: Socket, data: { gameId: string }) {
+    this.logger.log(`WebSocket makeMove received - GameID: ${data.gameId}, ClientID: ${client.id}`);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const userId = client.data?.user?.sub as string;
+    if (!userId) {
+      throw new WsException('Unauthenticated socket');
+    }
+    await client.join(data.gameId);
+    const game = await this.gameService.undoMove(data.gameId, userId);
+
+    this.server.to(game._id.toString()).emit('moveUndone', game);
+    this.logger.log(`Move undone successfully`);
+  }
+
+  @SubscribeMessage('getHistory')
+  async handleGameHistory(client: Socket, data: { gameId: string }) {
+    this.logger.log('Retrieveing game history');
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const userId = client.data?.user?.sub as string;
+    if (!userId) {
+      throw new WsException('Unauthenticated socket');
+    }
+    await client.join(data.gameId);
+    const game = await this.gameService.getMoveHistory(data.gameId);
+    const moves = game.moves;
+    this.server.to(game._id.toString()).emit('gameHistory', moves);
+  }
+
   //PVP event
-  emitGameUpdate(gameId: string, payload: any) {
+  emitGameUpdate(gameId: string, payload: GameData) {
     this.server.to(gameId).emit('gameUpdate', payload);
     // Also emit aiMoveMade for compatibility with client expectations
     this.server.to(gameId).emit('aiMoveMade', {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
       gameId: payload.gameId,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
       move: payload.moves[payload.moves.length - 1], // Last move
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      currentFen: payload.currentFen,
+      fen: payload.fen,
       explanation: 'AI move completed',
     });
   }

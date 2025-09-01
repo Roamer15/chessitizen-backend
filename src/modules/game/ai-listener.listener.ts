@@ -31,8 +31,8 @@ export class AiListener {
 
     const { gameId, fen, difficulty } = payload;
     const game = await this.gameService.getGame(gameId);
-    if (!game || game.gameStatus !== GameStatus.ONGOING) {
-      this.logger.warn(`Game ${gameId} not found or not in ONGOING status`);
+    if (!game || (game.gameStatus !== GameStatus.ONGOING && game.gameStatus !== GameStatus.PENDING)) {
+      this.logger.warn(`Game ${gameId} not found or not in ONGOING/PENDING status`);
       return;
     }
 
@@ -118,11 +118,11 @@ export class AiListener {
     await game.save();
     // Broadcast
     this.gameService.broadcastGameUpdate(game);
-    // this.gameGateway.server.to(game._id.toString()).emit('aiMoveMade', {
-    //   gameId: game._id,
-    //   move: { from: res.from, to: res.to, san: res.san, promotion: promotion ?? null },
-    //   currentFen: game.currentFen,
-    //   explanation,
-    // });
+    this.gameGateway.server.to(game._id.toString()).emit('aiMoveMade', {
+      gameId: game._id,
+      move: { from: res.from, to: res.to, san: res.san, promotion: promotion ?? null },
+      currentFen: game.currentFen,
+      explanation,
+    });
   }
 }

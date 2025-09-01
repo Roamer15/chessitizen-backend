@@ -95,6 +95,7 @@ export class GameService {
       vsAI: ai,
       userColor: color,
       aiDifficulty: dto.aiDifficulty,
+      gameStatus: GameStatus.PENDING,
       currentFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
     });
     // this.logger.log(game.save());
@@ -106,8 +107,13 @@ export class GameService {
     const game = await this.getGame(gameId);
 
     // const user = await this.getPlayer(userId);
-    if (game.gameStatus !== GameStatus.ONGOING) {
+    if (game.gameStatus !== GameStatus.ONGOING && game.gameStatus !== GameStatus.PENDING) {
       throwHttpError(ErrorCode.GAME_INVALID);
+    }
+
+    // Set game to ongoing if it was pending
+    if (game.gameStatus === GameStatus.PENDING) {
+      game.gameStatus = GameStatus.ONGOING;
     }
 
     const chess = new Chess(game.currentFen);

@@ -1,4 +1,4 @@
-import { forwardRef, Inject, UseGuards } from '@nestjs/common';
+import { forwardRef, HttpException, Inject, UseGuards } from '@nestjs/common';
 import {
   SubscribeMessage,
   WebSocketGateway,
@@ -52,30 +52,57 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   /**
    * Player joins a multiplayer game as the second player
    */
-  @SubscribeMessage('joinMultiplayerGame')
-  async handleJoinMultiplayerGame(
-    @MessageBody() gameId: string,
-    @ConnectedSocket() client: Socket,
-  ) {
-    this.logger.log(
-      `[v1] WebSocket joinMultiplayerGame called - GameID: ${gameId}, ClientID: ${client.id}`,
-    );
 
-    const userId = client.data?.user?.sub as string;
-    if (!userId) throw new WsException('Unauthenticated socket');
+@SubscribeMessage('joinMultiplayerGame')
+async handleJoinMultiplayerGame(
+  @MessageBody() gameId: string | null,
+  @ConnectedSocket() client: Socket,
+) {
+  const userId = client.data?.user?.sub as string;
+  if (!userId) throw new WsException('Unauthenticated socket');
 
-    if (!client.rooms.has(gameId)) {
-      await client.join(gameId);
+  try {
+    let game;
+
+    if (gameId) {
+      // Join a specific game
+      game = await this.gameService.joinGame(gameId, userId);
+    } else {
+      // Auto-join or create a game
+      game = await this.gameService.autoJoinOrCreate(userId);
     }
 
-    const game = await this.gameService.joinGame(gameId, userId);
+    // Join socket room if not already joined
+    if (!client.rooms.has(game._id.toString())) {
+      await client.join(game._id.toString());
+    }
 
-    this.server.to(gameId).emit('playerJoined', {
-      game,
-      player: userId,
-      message: `Player ${userId} joined the game.`,
+    // Notify the user
+    client.emit('gameJoined', {
+      gameId: game._id,
+      message: gameId
+        ? `Player ${userId} joined the game.`
+        : game.gameStatus === GameStatus.WAITING
+          ? 'Waiting for an opponent...'
+          : 'Game started!',
     });
+
+    // Broadcast to other players only if joining a specific game
+    if (gameId) {
+      this.server.to(game._id.toString()).emit('playerJoined', {
+        game,
+        player: userId,
+        message: `Player ${userId} joined the game.`,
+      });
+    }
+
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : 'Unable to join game';
+    this.logger.error(`joinMultiplayerGame failed for ${userId}: ${errMsg}`, error instanceof Error ? error.stack : undefined);
+    client.emit('joinError', { gameId, message: errMsg });
   }
+}
+
 
   /**
    * Start a new game (vs AI or multiplayer)
@@ -151,7 +178,10 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * Reset the chess board to original starting position
    */
   @SubscribeMessage('resetBoard')
-  async handleResetBoard(@MessageBody() data: { gameId: string }, @ConnectedSocket() client: Socket) {
+  async handleResetBoard(
+    @MessageBody() data: { gameId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
     this.logger.log(`WebSocket resetBoard called - GameID: ${data.gameId}, ClientID: ${client.id}`);
     const userId = client.data?.user?.sub as string;
     if (!userId) throw new WsException('Unauthenticated socket');

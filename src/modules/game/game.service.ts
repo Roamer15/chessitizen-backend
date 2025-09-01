@@ -3,18 +3,18 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { LoggerService } from 'src/logger/logger.service';
 import { Game } from 'src/schema/game.schema';
+import { User } from 'src/schema/user.schema';
 import { StartGameDto } from './dto/start-game.dto';
+import { MakeMoveDto } from './dto/make-move.dto';
 import { throwHttpError } from 'src/common/errors/http-exception.helper';
 import { ErrorCode } from 'src/common/errors/error-codes.enum';
-import { MakeMoveDto } from './dto/make-move.dto';
 import { GameStatus, ResultReason, Winner } from 'src/shared/enum/game.enum';
 import { Chess } from 'chess.js';
-import { User } from 'src/schema/user.schema';
 import { AiService } from 'src/ai/ai.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { GameGateway } from 'src/gateway/game.gateway';
 
-interface skillSet {
+interface SkillSet {
   skillLevel: number;
   depth: number;
 }
@@ -30,6 +30,7 @@ export class GameService {
     private readonly gameGateway: GameGateway,
   ) {}
 
+  /** ----------------- GAME FETCHERS ----------------- */
   async getGame(gameId: string): Promise<Game> {
     const game = await this.gameModel.findById(gameId);
     if (!game) throwHttpError(ErrorCode.GAME_NOT_FOUND);
@@ -42,6 +43,7 @@ export class GameService {
     return user;
   }
 
+  /** ----------------- GAME OVER HANDLING ----------------- */
   handleGameOver(game: Game, chess: Chess, winner: Winner) {
     game.gameStatus = GameStatus.ENDED;
     game.endedAt = new Date();
@@ -60,46 +62,34 @@ export class GameService {
     return game.save();
   }
 
-  getAiSkillLevel(aiDifficulty: string) {
-    let opts: skillSet;
+  /** ----------------- AI ----------------- */
+  getAiSkillLevel(aiDifficulty: string): SkillSet {
     switch (aiDifficulty) {
-      case 'easy':
-        opts = { skillLevel: 3, depth: 6 };
-        break;
-      case 'medium':
-        opts = { skillLevel: 7, depth: 1 };
-        break;
-      case 'hard':
-        opts = { skillLevel: 12, depth: 12 };
-        break;
-      case 'expert':
-        opts = { skillLevel: 16, depth: 15 };
-        break;
-      case 'grandmaster':
-        opts = { skillLevel: 20, depth: 18 };
-        break;
-      default:
-        opts = { skillLevel: 7, depth: 9 };
-        break;
+      case 'easy': return { skillLevel: 3, depth: 6 };
+      case 'medium': return { skillLevel: 7, depth: 1 };
+      case 'hard': return { skillLevel: 12, depth: 12 };
+      case 'expert': return { skillLevel: 16, depth: 15 };
+      case 'grandmaster': return { skillLevel: 20, depth: 18 };
+      default: return { skillLevel: 7, depth: 9 };
     }
-    return opts;
   }
 
+  /** ----------------- GAME START / CREATE ----------------- */
   async startGame(userId: string, dto: StartGameDto): Promise<Game> {
     this.logger.log(`Game starting for ${userId} with props: ${JSON.stringify(dto)}`);
 
     // Multiplayer game
     if (dto.isMultiplayer) {
+      const isWhite = Math.random() < 0.5;
       const game = new this.gameModel({
-        whitePlayer: new Types.ObjectId(userId),
-        blackPlayer: null,
+        whitePlayer: isWhite ? new Types.ObjectId(userId) : null,
+        blackPlayer: !isWhite ? new Types.ObjectId(userId) : null,
         vsAI: false,
         isMultiplayer: true,
-        gameStatus: GameStatus.WAITING, // waiting for another player
+        gameStatus: GameStatus.WAITING,
         currentFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
       });
-
-      return await game.save();
+      return game.save();
     }
 
     // AI game
@@ -115,45 +105,79 @@ export class GameService {
       gameStatus: GameStatus.ONGOING,
       currentFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
     });
-    return await game.save();
+    return game.save();
   }
 
+  /** ----------------- MULTIPLAYER AUTO-JOIN ----------------- */
+  async findWaitingGame(): Promise<Game | null> {
+    return this.gameModel.findOne({
+      isMultiplayer: true,
+      gameStatus: GameStatus.WAITING,
+      blackPlayer: null,
+    });
+  }
+
+  async autoJoinOrCreate(userId: string): Promise<Game> {
+    let game = await this.findWaitingGame();
+
+    if (!game) {
+      // No waiting game → create new one
+      game = new this.gameModel({
+        whitePlayer: new Types.ObjectId(userId),
+        blackPlayer: null,
+        isMultiplayer: true,
+        vsAI: false,
+        gameStatus: GameStatus.WAITING,
+        currentFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+      });
+      return game.save();
+    }
+
+    // Join the waiting game as blackPlayer
+    game.blackPlayer = new Types.ObjectId(userId);
+    game.gameStatus = GameStatus.ONGOING;
+    await game.save();
+
+    // Notify both players
+    this.emitGameStart(game._id.toString(), game);
+
+    return game;
+  }
+
+  /** ----------------- JOIN EXISTING GAME ----------------- */
   async joinGame(gameId: string, userId: string): Promise<Game> {
     const game = await this.getGame(gameId);
 
-    if (!game.isMultiplayer || (game.whitePlayer && game.blackPlayer)) {
-      throwHttpError(ErrorCode.GAME_INVALID); // Not joinable
+    if (!game.isMultiplayer) throwHttpError(ErrorCode.GAME_INVALID);
+
+    const whiteId = game.whitePlayer?.toString();
+    const blackId = game.blackPlayer?.toString();
+
+    if (whiteId && blackId) {
+      return this.startGame(userId, { isMultiplayer: true });
     }
 
-    if (game.whitePlayer?.toString() === userId.toString()) {
-      throwHttpError(ErrorCode.GAME_INVALID); // Can't join your own game
-    }
+    if (whiteId === userId || blackId === userId) throwHttpError(ErrorCode.GAME_INVALID);
 
-    game.blackPlayer = new Types.ObjectId(userId);
-    game.gameStatus = GameStatus.ONGOING;
+    if (!whiteId) game.whitePlayer = new Types.ObjectId(userId);
+    else game.blackPlayer = new Types.ObjectId(userId);
 
-    const updatedGame = await game.save();
+    if (game.whitePlayer && game.blackPlayer) game.gameStatus = GameStatus.ONGOING;
 
-    // Notify clients game started
-    this.emitGameStart(updatedGame._id.toString(), updatedGame);
-
-    return updatedGame;
+    return game.save();
   }
 
+  /** ----------------- MOVES ----------------- */
   async makeMove(gameId: string, userId: string, dto: MakeMoveDto) {
     const { from, to, promotion } = dto;
     const game = await this.getGame(gameId);
 
-    if (game.gameStatus !== GameStatus.ONGOING) {
-      throwHttpError(ErrorCode.GAME_INVALID);
-    }
+    if (game.gameStatus !== GameStatus.ONGOING) throwHttpError(ErrorCode.GAME_INVALID);
 
     const chess = new Chess(game.currentFen);
     const turnColor = chess.turn() === 'w' ? 'whitePlayer' : 'blackPlayer';
 
-    if (game[turnColor]?.toString() !== userId.toString()) {
-      throwHttpError(ErrorCode.NOT_YOUR_TURN);
-    }
+    if (game[turnColor]?.toString() !== userId) throwHttpError(ErrorCode.NOT_YOUR_TURN);
 
     const move = chess.move({ from, to, promotion });
     if (!move) throwHttpError(ErrorCode.INVALID_MOVE);
@@ -162,11 +186,7 @@ export class GameService {
     game.moves.push({ from, to, fen: chess.fen(), san: move.san });
 
     if (chess.isGameOver()) {
-      return this.handleGameOver(
-        game,
-        chess,
-        turnColor === 'whitePlayer' ? Winner.WHITE : Winner.BLACK,
-      );
+      return this.handleGameOver(game, chess, turnColor === 'whitePlayer' ? Winner.WHITE : Winner.BLACK);
     }
 
     if (game.vsAI) {
@@ -179,10 +199,10 @@ export class GameService {
 
     const savedGame = await game.save();
     this.broadcastGameUpdate(savedGame);
-
     return savedGame;
   }
 
+  /** ----------------- GAME UTILS ----------------- */
   async endGame(gameId: string, reason: ResultReason, winner: Winner): Promise<Game> {
     const game = await this.getGame(gameId);
     game.gameStatus = GameStatus.ENDED;
@@ -194,48 +214,28 @@ export class GameService {
 
   async resetBoard(gameId: string): Promise<Game> {
     const game = await this.getGame(gameId);
-    const startingFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
-
-    game.currentFen = startingFen;
+    game.currentFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
     game.moves = [];
     game.gameStatus = GameStatus.ONGOING;
-
     const savedGame = await game.save();
     this.broadcastGameUpdate(savedGame);
-
     return savedGame;
   }
 
   async undoMove(gameId: string, userId: string): Promise<Game> {
     const game = await this.getGame(gameId);
-
-    if (game.gameStatus !== GameStatus.ONGOING) {
-      throwHttpError(ErrorCode.GAME_INVALID);
-    }
-
-    if (game.moves.length === 0) {
-      throwHttpError(ErrorCode.INVALID_MOVE); // No moves to undo
-    }
+    if (game.gameStatus !== GameStatus.ONGOING) throwHttpError(ErrorCode.GAME_INVALID);
+    if (game.moves.length === 0) throwHttpError(ErrorCode.INVALID_MOVE);
 
     const chess = new Chess(game.currentFen);
-    const lastMove = game.moves[game.moves.length - 1];
+    const lastMove = game.moves.pop();
     const lastTurnColor = chess.turn() === 'w' ? 'blackPlayer' : 'whitePlayer';
 
-    if (game[lastTurnColor]?.toString() !== userId.toString()) {
-      throwHttpError(ErrorCode.NO_MOVES_TO_UNDO);
-    }
+    if (game[lastTurnColor]?.toString() !== userId) throwHttpError(ErrorCode.NO_MOVES_TO_UNDO);
 
-    game.moves.pop();
-
-    if (game.moves.length > 0) {
-      game.currentFen = lastMove.fen;
-    } else {
-      game.currentFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
-    }
-
+    game.currentFen = game.moves.length > 0 ? game.moves[game.moves.length - 1].fen : 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
     const savedGame = await game.save();
     this.broadcastGameUpdate(savedGame);
-
     return savedGame;
   }
 

@@ -34,8 +34,8 @@ export enum Winner {
   HUMAN = 'human',
   AI = 'ai',
   UNDECICED = 'null',
-  WHITE = 'white',
-  BLACK = 'black',
+  WHITEPLAYER = 'whitePlayer',
+  BLACKPLAYER = 'blackPlayer',
 }
 
 export enum GameLevel {

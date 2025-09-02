@@ -127,7 +127,7 @@ export class GameService {
       return this.handleGameOver(
         game,
         chess,
-        turnColor === 'whitePlayer' ? Winner.WHITE : Winner.BLACK,
+        turnColor === 'whitePlayer' ? Winner.WHITEPLAYER : Winner.BLACKPLAYER,
       );
     }
 
@@ -248,6 +248,55 @@ export class GameService {
 
       throw new Error('Failed to retrieve move history');
     }
+  }
+
+  async createMultiplayerGame(userId1: string, userId2: string): Promise<Game> {
+    const game = new this.gameModel({
+      whitePlayer: new Types.ObjectId(userId1),
+      blackPlayer: new Types.ObjectId(userId2),
+      vsAI: false, // Multiplayer game
+      gameStatus: GameStatus.ONGOING,
+      currentFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+    });
+
+    return game.save();
+  }
+
+  async handleMultiplayerMove(gameId: string, userId: string, dto: MakeMoveDto) {
+    const game = await this.getGame(gameId);
+
+    // Validate it's multiplayer
+    if (game.vsAI) {
+      throw new Error('This is an AI game');
+    }
+
+    // Validate player turn
+    const chess = new Chess(game.currentFen);
+    const turnColor = chess.turn() === 'w' ? Winner.WHITEPLAYER : Winner.BLACKPLAYER;
+
+    if (game[turnColor]?.toString() !== userId) {
+      throw new Error('Not your turn');
+    }
+
+    // Process move (reuse your existing logic)
+    const move = chess.move({ from: dto.from, to: dto.to, promotion: dto.promotion });
+    game.currentFen = chess.fen();
+    game.moves.push({
+      from: dto.from,
+      to: dto.to,
+      fen: chess.fen(),
+      san: move.san,
+    });
+
+    // Check game over
+    if (chess.isGameOver()) {
+      await this.handleGameOver(game, chess, turnColor);
+    }
+
+    const savedGame = await game.save();
+    this.broadcastGameUpdate(savedGame);
+
+    return savedGame;
   }
 
   broadcastGameUpdate(game: Game) {

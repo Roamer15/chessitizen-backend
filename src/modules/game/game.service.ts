@@ -28,6 +28,7 @@ export class GameService {
     private readonly aiService: AiService,
     private readonly eventEmitter: EventEmitter2,
     private readonly gameGateway: GameGateway,
+    
   ) {}
 
   /** ----------------- GAME FETCHERS ----------------- */
@@ -168,7 +169,15 @@ export class GameService {
   }
 
   /** ----------------- MOVES ----------------- */
-  async makeMove(gameId: string, userId: string, dto: MakeMoveDto) {
+ private gameLocks: Record<string, boolean> = {};
+
+async makeMove(gameId: string, userId: string, dto: MakeMoveDto) {
+  while (this.gameLocks[gameId]) {
+    await new Promise(res => setTimeout(res, 5));
+  }
+  this.gameLocks[gameId] = true;
+
+  try {
     const { from, to, promotion } = dto;
     const game = await this.getGame(gameId);
 
@@ -200,7 +209,11 @@ export class GameService {
     const savedGame = await game.save();
     this.broadcastGameUpdate(savedGame);
     return savedGame;
+  } finally {
+    this.gameLocks[gameId] = false;
   }
+}
+
 
   /** ----------------- GAME UTILS ----------------- */
   async endGame(gameId: string, reason: ResultReason, winner: Winner): Promise<Game> {

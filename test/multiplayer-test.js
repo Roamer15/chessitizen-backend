@@ -1,12 +1,14 @@
 import { io } from "socket.io-client";
+import jwt from "jsonwebtoken"
+import mongoose from "mongoose";
 
 // simulate two players
 const player1 = io("http://localhost:3000", {
-  auth: { token: "JWT_TOKEN_FOR_PLAYER1" }
+  auth: { token: "68b05a5ec068c1623efdf12b" }
 });
 
 const player2 = io("http://localhost:3000", {
-  auth: { token: "JWT_TOKEN_FOR_PLAYER2" }
+  auth: { token: "68b05a31c068c1623efdf10d" }
 });
 
 player1.on("connect", () => {

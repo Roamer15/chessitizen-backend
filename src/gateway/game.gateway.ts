@@ -72,14 +72,17 @@ async handleJoinMultiplayerGame(
       game = await this.gameService.autoJoinOrCreate(userId);
     }
 
-    // Join socket room if not already joined
-    if (!client.rooms.has(game._id.toString())) {
-      await client.join(game._id.toString());
+    const gameRoom = game._id.toString(); // always stringify
+
+    // Join the socket to the game room
+    if (!client.rooms.has(gameRoom)) {
+      await client.join(gameRoom);
     }
 
-    // Notify the user
+    // Notify the joining client
     client.emit('gameJoined', {
-      gameId: game._id,
+      gameId: gameRoom,
+      game,
       message: gameId
         ? `Player ${userId} joined the game.`
         : game.gameStatus === GameStatus.WAITING
@@ -87,23 +90,29 @@ async handleJoinMultiplayerGame(
           : 'Game started!',
     });
 
-    // Broadcast to other players only if joining a specific game
-    if (gameId) {
-      this.server.to(game._id.toString()).emit('playerJoined', {
-        game,
-        player: userId,
-        message: `Player ${userId} joined the game.`,
-      });
+    // Notify all players in the room (including self)
+    this.server.to(gameRoom).emit('playerJoined', {
+      game,
+      player: userId,
+      message: `Player ${userId} joined the game.`,
+    });
+
+    // ✅ Emit gameStarted if both players are present
+    if (game.isMultiplayer && game.whitePlayer && game.blackPlayer) {
+      this.logger.log(`Emitting gameStarted for multiplayer game ${game._id}`);
+      this.server.to(gameRoom).emit('gameStarted', game);
     }
 
+    return game;
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : 'Unable to join game';
-    this.logger.error(`joinMultiplayerGame failed for ${userId}: ${errMsg}`, error instanceof Error ? error.stack : undefined);
+    this.logger.error(
+      `joinMultiplayerGame failed for ${userId}: ${errMsg}`,
+      error instanceof Error ? error.stack : undefined,
+    );
     client.emit('joinError', { gameId, message: errMsg });
   }
 }
-
-
   /**
    * Start a new game (vs AI or multiplayer)
    */
@@ -130,27 +139,34 @@ async handleJoinMultiplayerGame(
   /**
    * Handle player moves
    */
-  @SubscribeMessage('makeMove')
-  async handleMakeMove(
-    @MessageBody() data: { gameId: string; dto: MakeMoveDto },
-    @ConnectedSocket() client: Socket,
-  ) {
-    this.logger.log(
-      `WebSocket makeMove received - GameID: ${data.gameId}, ClientID: ${client.id}, Move: ${JSON.stringify(data.dto)}`,
-    );
+@SubscribeMessage('makeMove')
+async handleMakeMove(
+  @MessageBody() data: { gameId: string; dto: MakeMoveDto },
+  @ConnectedSocket() client: Socket,
+) {
+  this.logger.log(
+    `WebSocket makeMove received - GameID: ${data.gameId}, ClientID: ${client.id}, Move: ${JSON.stringify(data.dto)}`,
+  );
 
-    const userId = client.data?.user?.sub as string;
-    if (!userId) throw new WsException('Unauthenticated socket');
+  const userId = client.data?.user?.sub as string;
+  if (!userId) throw new WsException('Unauthenticated socket');
 
-    await client.join(data.gameId);
-    const game = await this.gameService.makeMove(data.gameId, userId, data.dto);
+  await client.join(data.gameId);
+  const game = await this.gameService.makeMove(data.gameId, userId, data.dto);
 
-    // Service already broadcasts updates via emitGameUpdate
-    if (game.gameStatus === GameStatus.ENDED) {
-      this.server.to(game._id.toString()).emit('gameEnded', game);
-    }
+  // ✅ Broadcast move to both players
+  this.server.to(game._id.toString()).emit('moveMade', {
+    gameId: game._id,
+    move: data.dto,
+    fen: game.currentFen, // new board state
+    game,
+  });
+
+  // ✅ If game ended, notify both players
+  if (game.gameStatus === GameStatus.ENDED) {
+    this.server.to(game._id.toString()).emit('gameEnded', game);
   }
-
+}
   /**
    * End game manually (abort/timeout/etc)
    */
@@ -188,7 +204,7 @@ async handleJoinMultiplayerGame(
 
     await client.join(data.gameId);
     const game = await this.gameService.resetBoard(data.gameId);
-
+    this.server.to(game._id.toString()).emit('moveMade', game);
     this.server.to(game._id.toString()).emit('boardReset', game);
     this.logger.log(`Board reset for game ${data.gameId}`);
   }

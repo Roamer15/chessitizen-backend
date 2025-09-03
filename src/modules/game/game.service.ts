@@ -299,6 +299,15 @@ export class GameService {
     return savedGame;
   }
 
+  async findActiveGamesByUser(userId: string): Promise<Game[]> {
+    return this.gameModel.find({
+      $or: [
+        { whitePlayer: userId, gameStatus: GameStatus.ONGOING },
+        { blackPlayer: userId, gameStatus: GameStatus.ONGOING },
+      ],
+    });
+  }
+
   broadcastGameUpdate(game: Game) {
     const payload = {
       gameId: game._id,

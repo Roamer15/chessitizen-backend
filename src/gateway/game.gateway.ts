@@ -51,6 +51,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     @Inject(forwardRef(() => GameService))
     private readonly gameService: GameService,
+    @Inject(forwardRef(() => MatchmakingService))
     private readonly matchMaking: MatchmakingService,
     private readonly logger: LoggerService,
   ) {
@@ -173,7 +174,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('startGame')
   async handleStartGame(@MessageBody() dto: StartGameDto, @ConnectedSocket() client: Socket) {
     // Assumes a WS auth guard/middleware attaches the JWT payload to client.data.user
-    this.logger.log(`[v0] WebSocket startGame called - ClientID: ${client.id}`);
+    this.logger.log(`WebSocket startGame called - ClientID: ${client.id}`);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const userId = client.data?.user?.sub as string;
     if (!userId) {
@@ -278,6 +279,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('getHistory')
   async handleGameHistory(client: Socket, data: { gameId: string }) {
     this.logger.log('Retrieveing game history');
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const userId = client.data?.user?.sub as string;
     if (!userId) {
       throw new WsException('Unauthenticated socket');

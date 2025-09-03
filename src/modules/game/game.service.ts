@@ -259,6 +259,8 @@ export class GameService {
       currentFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
     });
 
+    //Add modification statement to emit gameStarted here
+    this.eventEmitter.emit('gameStarted', game);
     return game.save();
   }
 

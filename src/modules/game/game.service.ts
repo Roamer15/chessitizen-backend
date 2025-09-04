@@ -14,10 +14,24 @@ import { AiService } from 'src/ai/ai.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { GameGateway } from 'src/gateway/game.gateway';
 import { randomBytes } from 'crypto';
+interface PopulatedUser {
+  _id: Types.ObjectId;
+  username?: string;
+  stats?: {
+    rating?: number;
+  };
+}
 
-interface SkillSet {
-  skillLevel: number;
-  depth: number;
+interface PopulatedGame {
+  _id: Types.ObjectId;
+  whitePlayer?: PopulatedUser;
+  blackPlayer?: PopulatedUser;
+  result: {
+    winner: Winner;
+    outcome: ResultReason;
+  };
+  endedAt: Date;
+  gameStatus: GameStatus;
 }
 
 @Injectable()
@@ -44,8 +58,7 @@ export class GameService {
     return user;
   }
 
-  /** ----------------- GAME OVER HANDLING ----------------- */
-  handleGameOver(game: Game, chess: Chess, winner: Winner) {
+  async handleGameOver(game: Game, chess: Chess, winner: Winner) {
     game.gameStatus = GameStatus.ENDED;
     game.endedAt = new Date();
 
@@ -60,11 +73,78 @@ export class GameService {
       game.result = { outcome, winner: Winner.UNDECICED };
     }
 
+    // Update player ratings & stats
+    if (game.whitePlayer && game.blackPlayer) {
+      const white = await this.userModel.findById(game.whitePlayer);
+      const black = await this.userModel.findById(game.blackPlayer);
+
+      if (white && black) {
+        if (winner === Winner.WHITEPLAYER) {
+          this.updatePlayerStats(white, 'win', game.vsAI);
+          this.updatePlayerStats(black, 'loss', game.vsAI);
+        } else if (winner === Winner.BLACKPLAYER) {
+          this.updatePlayerStats(black, 'win', game.vsAI);
+          this.updatePlayerStats(white, 'loss', game.vsAI);
+        } else {
+          // Draw
+          this.updatePlayerStats(white, 'draw', game.vsAI);
+          this.updatePlayerStats(black, 'draw', game.vsAI);
+        }
+
+        await Promise.all([white.save(), black.save()]);
+      }
+    }
+
     return game.save();
   }
 
-  /** ----------------- AI ----------------- */
-  getAiSkillLevel(aiDifficulty: string): SkillSet {
+  // helper to update stats
+  private updatePlayerStats(user: User, result: 'win' | 'loss' | 'draw', vsAI: boolean) {
+    if (!user.stats) {
+      user.stats = {
+        wins: { ai: 0, human: 0 },
+        losses: { ai: 0, human: 0 },
+        draws: 0,
+        rating: 800,
+        highestRating: 800,
+        streak: 0,
+      };
+    }
+
+    switch (result) {
+      case 'win':
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        if (vsAI) user.stats.wins.ai += 1;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        else user.stats.wins.human += 1;
+        user.stats.rating += 10;
+        user.stats.streak += 1;
+        break;
+
+      case 'loss':
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        if (vsAI) user.stats.losses.ai += 1;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        else user.stats.losses.human += 1;
+        user.stats.rating = Math.max(100, user.stats.rating - 10); // don't go below 100
+        user.stats.streak = 0; // reset streak on loss
+        break;
+
+      case 'draw':
+        user.stats.draws += 1;
+        user.stats.rating += 5;
+        // streak unchanged
+        break;
+    }
+
+    // track highest rating
+    if (user.stats.rating > user.stats.highestRating) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      user.stats.highestRating = user.stats.rating;
+    }
+  }
+
+  getAiSkillLevel(aiDifficulty: string) {
     switch (aiDifficulty) {
       case 'easy':
         return { skillLevel: 3, depth: 6 };
@@ -204,7 +284,7 @@ export class GameService {
         return this.handleGameOver(
           game,
           chess,
-          turnColor === 'whitePlayer' ? Winner.WHITE : Winner.BLACK,
+          turnColor === 'whitePlayer' ? Winner.WHITEPLAYER : Winner.BLACKPLAYER,
         );
       }
 
@@ -231,6 +311,29 @@ export class GameService {
     game.endedAt = new Date();
     game.result = { outcome: reason, winner };
     this.logger.log(`Ending game with reason: ${reason} and winner ${winner}`);
+    return this.finalizeGame(game, game.result.winner);
+  }
+
+  private async finalizeGame(game: Game, winner: Winner): Promise<Game> {
+    if (game.whitePlayer && game.blackPlayer) {
+      const white = await this.userModel.findById(game.whitePlayer);
+      const black = await this.userModel.findById(game.blackPlayer);
+
+      if (white && black) {
+        if (winner === Winner.WHITEPLAYER) {
+          this.updatePlayerStats(white, 'win', game.vsAI);
+
+          this.updatePlayerStats(black, 'loss', game.vsAI);
+        } else if (winner === Winner.BLACKPLAYER) {
+          this.updatePlayerStats(black, 'win', game.vsAI);
+        } else {
+          this.updatePlayerStats(white, 'draw', game.vsAI);
+          this.updatePlayerStats(black, 'draw', game.vsAI);
+        }
+
+        await Promise.all([white.save(), black.save()]);
+      }
+    }
     return game.save();
   }
 
@@ -261,6 +364,129 @@ export class GameService {
     const savedGame = await game.save();
     this.broadcastGameUpdate(savedGame);
     return savedGame;
+  }
+
+  async createMultiplayerGame(userId1: string, userId2: string): Promise<Game> {
+    const game = new this.gameModel({
+      whitePlayer: new Types.ObjectId(userId1),
+      blackPlayer: new Types.ObjectId(userId2),
+      vsAI: false, // Multiplayer game
+      gameStatus: GameStatus.ONGOING,
+      currentFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+    });
+    const savedGame = await game.save();
+
+    this.eventEmitter.emit('gameStarted', savedGame);
+
+    return savedGame;
+  }
+
+  async handleMultiplayerMove(gameId: string, userId: string, dto: MakeMoveDto) {
+    const game = await this.getGame(gameId);
+
+    // Validate it's multiplayer
+    if (game.vsAI) {
+      throw new Error('This is an AI game');
+    }
+
+    // Validate player turn
+    const chess = new Chess(game.currentFen);
+    const turnColor = chess.turn() === 'w' ? Winner.WHITEPLAYER : Winner.BLACKPLAYER;
+
+    if (game[turnColor]?.toString() !== userId) {
+      throw new Error('Not your turn');
+    }
+
+    // Process move (reuse your existing logic)
+    const move = chess.move({ from: dto.from, to: dto.to, promotion: dto.promotion });
+    game.currentFen = chess.fen();
+    game.moves.push({
+      from: dto.from,
+      to: dto.to,
+      fen: chess.fen(),
+      san: move.san,
+    });
+
+    // Check game over
+    if (chess.isGameOver()) {
+      await this.handleGameOver(game, chess, turnColor);
+    }
+
+    const savedGame = await game.save();
+    this.broadcastGameUpdate(savedGame);
+
+    return savedGame;
+  }
+
+  async findActiveGamesByUser(userId: string): Promise<Game[]> {
+    return this.gameModel.find({
+      $or: [
+        { whitePlayer: userId, gameStatus: GameStatus.ONGOING },
+        { blackPlayer: userId, gameStatus: GameStatus.ONGOING },
+      ],
+    });
+  }
+
+  // async getUserGameHistory(userId: string) {
+  //   const games = await this.gameModel
+  //     .find({
+  //       $or: [{ whitePlayer: userId }, { blackPlayer: userId }],
+  //       gameStatus: GameStatus.ENDED,
+  //     })
+  //     .sort({ endedAt: -1 })
+  //     .limit(20)
+  //     .populate('whitePlayer', 'username stats.rating')
+  //     .populate('blackPlayer', 'username stats.rating')
+  //     .lean();
+
+  //   return games.map((g) => {
+  //     const isWhite = g.whitePlayer?._id?.toString() === userId;
+  //     const opponent = isWhite ? g.blackPlayer : g.whitePlayer;
+
+  //     let outcome: 'WIN' | 'LOSS' | 'DRAW' = 'DRAW';
+
+  //     if (g.result.winner === Winner.WHITEPLAYER && isWhite) outcome = 'WIN';
+  //     else if (g.result.winner === Winner.BLACKPLAYER && !isWhite) outcome = 'WIN';
+  //     else if (g.result.winner !== Winner.UNDECICED) outcome = 'LOSS';
+
+  //     return {
+  //       opponent: opponent?.username || 'Unknown',
+  //       opponentRating: opponent?.stats?.rating || 800,
+  //       outcome,
+  //       endedAt: g.endedAt,
+  //     };
+  //   });
+  // }
+
+  async getUserGameHistory(userId: string) {
+    const games = await this.gameModel
+      .find({
+        $or: [{ whitePlayer: userId }, { blackPlayer: userId }],
+        gameStatus: GameStatus.ENDED,
+      })
+      .sort({ endedAt: -1 })
+      .limit(20)
+      .populate<{ whitePlayer: PopulatedUser }>('whitePlayer', 'username stats.rating')
+      .populate<{ blackPlayer: PopulatedUser }>('blackPlayer', 'username stats.rating')
+      .lean<PopulatedGame[]>();
+
+    return games.map((g) => {
+      const isWhite = g.whitePlayer?._id?.toString() === userId;
+      const opponent = isWhite ? g.blackPlayer : g.whitePlayer;
+
+      let outcome: 'WIN' | 'LOSS' | 'DRAW' = 'DRAW';
+
+      if (g.result.winner === Winner.WHITEPLAYER && isWhite) outcome = 'WIN';
+      else if (g.result.winner === Winner.BLACKPLAYER && !isWhite) outcome = 'WIN';
+      else if (g.result.winner !== Winner.UNDECICED) outcome = 'LOSS';
+
+      return {
+        opponent: opponent?.username || 'Unknown',
+        opponentRating: opponent?.stats?.rating || 800,
+        outcome, // Don't forget to include outcome in the return!
+        endedAt: g.endedAt,
+      };
+    });
   }
 
   broadcastGameUpdate(game: Game) {

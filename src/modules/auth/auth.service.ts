@@ -27,6 +27,32 @@ export class AuthService {
     private readonly logger: LoggerService,
   ) {}
 
+  private extractUsernameFromEmail(email: string): string {
+    const username = email.split('@')[0];
+
+    return username
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .toLowerCase()
+      .substring(0, 20);
+  }
+
+  private async generateUniqueUsername(baseUsername: string): Promise<string> {
+    let username = baseUsername;
+    let counter = 1;
+
+    while (await this.userModel.findOne({ username })) {
+      username = `${baseUsername}${counter}`;
+      counter++;
+
+      if (counter > 100) {
+        username = `${baseUsername}${Date.now()}`;
+        break;
+      }
+    }
+
+    return username;
+  }
+
   async sendOtp(sendOtpDto: SendOtpDto): Promise<void> {
     // Rate limiting
     const otpAttempts = await this.redis.getAttempts(`otp_attempts:${sendOtpDto.email}`);
@@ -45,7 +71,7 @@ export class AuthService {
   async verifyOtp({ email, otp }: VerifyOtpDto): Promise<{
     access_token: string;
     refresh_token: string;
-    user: { id: string; email: string };
+    user: { id: string; email: string; username: string };
   }> {
     const stored = await this.redis.getOtp(email);
     if (stored !== otp) {
@@ -55,9 +81,12 @@ export class AuthService {
     await this.redis.deleteOtp(email);
     await this.redis.resetAttempts(`otp_attempts:${email}`);
 
+    const baseUsername = this.extractUsernameFromEmail(email);
+    const username = await this.generateUniqueUsername(baseUsername);
+
     const user = await this.userModel.findOneAndUpdate(
       { email },
-      { verified: true, otpSecret: otp },
+      { verified: true, otpSecret: otp, username: username },
       { new: true, upsert: true },
     );
 
@@ -68,7 +97,7 @@ export class AuthService {
     return {
       access_token,
       refresh_token,
-      user: { id: userId, email: user.email },
+      user: { id: userId, email: user.email, username: user.username ?? 'player' },
     };
   }
   // -------------------------

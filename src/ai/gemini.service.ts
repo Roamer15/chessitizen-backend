@@ -51,12 +51,13 @@ export class GeminiService {
       generationConfig: {
         temperature: opts?.temperature ?? 0.7, // default fallback
         topP: opts?.topP ?? 0.9,
-        maxOutputTokens: opts?.maxOutputTokens ?? 256,
+        maxOutputTokens: opts?.maxOutputTokens,
       },
     });
     const result = await model.generateContent(prompt);
+
     const response = result.response;
-    return response.text();
-    // return '{"move":"e7e5","promotion":null,"explanation":"Fights for the center."}';
+    const responseText = response.text();
+    return responseText;
   }
 }

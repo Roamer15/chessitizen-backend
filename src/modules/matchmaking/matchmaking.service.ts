@@ -207,6 +207,9 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
         },
       });
 
+      socket1.emit('gameStarted', game);
+      socket2.emit('gameStarted', game);
+
       this.logger.log(`Match created between ${player1.userId} and ${player2.userId}`);
     } catch (error) {
       this.logger.error('Match creation failed:', error);

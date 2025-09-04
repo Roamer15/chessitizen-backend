@@ -258,10 +258,11 @@ export class GameService {
       gameStatus: GameStatus.ONGOING,
       currentFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
     });
+    const savedGame = await game.save();
 
-    //Add modification statement to emit gameStarted here
-    this.eventEmitter.emit('gameStarted', game);
-    return game.save();
+    this.eventEmitter.emit('gameStarted', savedGame);
+
+    return savedGame;
   }
 
   async handleMultiplayerMove(gameId: string, userId: string, dto: MakeMoveDto) {

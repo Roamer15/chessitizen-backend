@@ -7,7 +7,7 @@ export class User extends Document {
   email: string;
 
   @Prop({ required: false, unique: false })
-  username: string;
+  username?: string;
 
   @Prop({ select: false })
   otpSecret?: string;

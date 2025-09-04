@@ -10,6 +10,7 @@ import {
   ConnectedSocket,
   WsException,
 } from '@nestjs/websockets';
+import { OnModuleDestroy } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { LoggerService } from 'src/logger/logger.service';
 import { MakeMoveDto } from 'src/modules/game/dto/make-move.dto';
@@ -35,13 +36,13 @@ interface GameData {
 
 @WebSocketGateway({
   cors: {
-    origin: '*',
+    origin: 'http://localhost:8081',
     pingTimeout: 60000, // 60 seconds
     pingInterval: 25000, // 25 seconds
   },
 })
 @UseGuards(WsAuthGuard)
-export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy {
   @WebSocketServer()
   server: Server;
 
@@ -64,6 +65,11 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
         }
       })();
     }, 30000);
+  }
+
+  // class GameGateway implements ..., OnModuleDestroy
+  onModuleDestroy() {
+    if (this.cleanupInterval) clearInterval(this.cleanupInterval);
   }
 
   private setupConnectionMonitoring(): void {

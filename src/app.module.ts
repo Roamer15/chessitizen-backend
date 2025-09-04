@@ -12,6 +12,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { GameModule } from './modules/game/game.module';
 import { GameGatewayModule } from './gateway/gateway.module';
 import { MatchmakingModule } from './modules/matchmaking/matchmaking.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { MatchmakingModule } from './modules/matchmaking/matchmaking.module';
     AuthModule,
     RedisModule,
     MatchmakingModule,
+    AnalyticsModule,
     LoggerModule,
     UserModule,
   ],

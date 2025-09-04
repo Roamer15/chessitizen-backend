@@ -38,4 +38,9 @@ export class GameController {
   ): Promise<Game> {
     return this.gameService.endGame(gameId, body.reason, body.winner);
   }
+
+  @Get(':id/history')
+  async getGameHistory(@Param(':id') id: string) {
+    return this.gameService.getUserGameHistory(id);
+  }
 }

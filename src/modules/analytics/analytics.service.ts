@@ -46,6 +46,8 @@ export class AnalyticsService {
     const winRate = totalGames > 0 ? (totalWins / totalGames) * 100 : 0;
 
     return {
+      username: user.username,
+      email: user.email,
       overview: {
         rating: stats.rating,
         highestRating: stats.highestRating,
@@ -98,5 +100,25 @@ export class AnalyticsService {
         winRate,
       };
     });
+  }
+
+  async updateProfile(userId: string, updates: { username?: string }) {
+    const user = await this.userModel.findById(userId);
+    if (!user) throwHttpError(ErrorCode.USER_NOT_FOUND);
+
+    if (updates.username) {
+      user.username = updates.username;
+    }
+
+    await user.save();
+
+    return {
+      message: 'Profile updated sucessfully',
+      user: {
+        username: user.username,
+        email: user.email,
+        stats: user.stats,
+      },
+    };
   }
 }

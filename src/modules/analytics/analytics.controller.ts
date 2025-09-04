@@ -1,4 +1,4 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
 import { AnalyticsService } from './analytics.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -6,7 +6,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 @UseGuards(JwtAuthGuard)
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
-  @Get(':id/stats')
+  @Get(':id/profile')
   async getUserStats(@Param('id') id: string) {
     return this.analyticsService.getUserStats(id);
   }
@@ -14,5 +14,10 @@ export class AnalyticsController {
   @Get('leaderboard')
   async getLeaderboard() {
     return this.analyticsService.getLeaderboard();
+  }
+
+  @Patch(':id/profile')
+  async updateProfile(@Param('id') userId: string, @Body() updates: { username?: string }) {
+    return this.analyticsService.updateProfile(userId, updates);
   }
 }

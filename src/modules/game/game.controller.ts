@@ -38,4 +38,16 @@ export class GameController {
   ): Promise<Game> {
     return this.gameService.endGame(gameId, body.reason, body.winner);
   }
+
+@UseGuards(JwtAuthGuard)
+@Post(':id/invite')
+async createInvite(@Param('id') gameId: string, @Req() req) {
+  return this.gameService.generateInviteLink(gameId);
+}
+
+@UseGuards(JwtAuthGuard)
+@Post('join/:inviteCode')
+async joinByInvite(@Param('inviteCode') inviteCode: string, @Req() req) {
+  return this.gameService.joinByInviteCode(inviteCode, req.user.id);
+}
 }

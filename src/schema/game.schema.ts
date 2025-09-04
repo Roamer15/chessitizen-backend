@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { Color, GameLevel, GameStatus, ResultReason, Winner } from 'src/shared/enum/game.enum';
+import { User } from './user.schema';
 
 @Schema({
   timestamps: {
@@ -28,6 +29,10 @@ export class Game extends Document {
 
   @Prop({ default: GameStatus.ONGOING, enum: Object.values(GameStatus) })
   gameStatus: GameStatus;
+
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], default: [] })
+players: Types.ObjectId[];
+
 
   @Prop({
     type: [
@@ -71,6 +76,12 @@ export class Game extends Document {
 
     @Prop({ default: false })
   isMultiplayer: boolean;
+
+  
+
+  @Prop({unique: true, sparse: true})
+  inviteCode?: string;
 }
+
 
 export const GameSchema = SchemaFactory.createForClass(Game);

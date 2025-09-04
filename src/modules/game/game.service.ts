@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { LoggerService } from 'src/logger/logger.service';
@@ -13,6 +13,8 @@ import { Chess } from 'chess.js';
 import { AiService } from 'src/ai/ai.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { GameGateway } from 'src/gateway/game.gateway';
+import { randomBytes } from 'crypto';
+import { NotFoundError } from 'rxjs';
 
 interface SkillSet {
   skillLevel: number;
@@ -265,4 +267,45 @@ async makeMove(gameId: string, userId: string, dto: MakeMoveDto) {
   emitGameStart(gameId: string, game: Game) {
     this.gameGateway.server.to(gameId).emit('gameStarted', game);
   }
+
+async generateInviteLink(gameId: string): Promise<{ inviteCode: string; inviteLink: string }> {
+  const inviteCode = randomBytes(6).toString('hex');
+  const game = await this.gameModel.findByIdAndUpdate(
+    gameId,
+    { inviteCode },
+    { new: true }
+  );
+  if (!game) throw new NotFoundException('Game not found');
+
+  return {
+    inviteCode,
+    inviteLink: `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/games/join/${inviteCode}`,
+  };
 }
+
+async joinByInviteCode(inviteCode: string, userId: string) {
+  const game = await this.gameModel.findOne({ inviteCode });
+  if (!game) throw new NotFoundException('Invalid invite code');
+
+  const userObjectId = new Types.ObjectId(userId);
+
+  // If white slot empty → fill it
+  if (!game.whitePlayer) {
+    game.whitePlayer = userObjectId;
+  }
+  // Else if black slot empty → fill it
+  else if (!game.blackPlayer) {
+    game.blackPlayer = userObjectId;
+  }
+  // Else game already full
+  else {
+    throw new BadRequestException('Game already has two players');
+  }
+
+  await game.save();
+  return game;
+}
+
+}
+
+

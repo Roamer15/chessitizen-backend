@@ -125,17 +125,28 @@ async handleJoinMultiplayerGame(
     const game = await this.gameService.startGame(userId, dto);
     await client.join(game._id.toString());
 
-    if (game.isMultiplayer) {
-      this.server.to(game._id.toString()).emit('gameWaiting', {
-        gameId: game._id,
-        message: 'Game created, waiting for another player to join.',
-      });
-    } else {
-      this.logger.log(`Emitting gameStarted for ${game._id} to room`);
-      this.server.to(game._id.toString()).emit('gameStarted', game);
+     if (game.isMultiplayer) {
+    // Ensure inviteCode exists
+    if (!game.inviteCode) {
+      const inviteLinkObj = await this.gameService.generateInviteLink(game._id);
+      // `generateInviteLink` returns an object, extract code from inviteLink string
+      const inviteCode = inviteLinkObj.inviteLink.split('/').pop();
+      game.inviteCode = inviteCode;
+      await game.save();
     }
-  }
 
+    // Emit both options: direct join OR invite-based join
+    this.server.to(game._id.toString()).emit('gameWaiting', {
+      gameId: game._id,
+      inviteCode: game.inviteCode, // use this for invite-based join
+      message:
+        'Game created. Another player can join directly or via invite link.',
+    });
+  } else {
+    this.logger.log(`Emitting gameStarted for ${game._id} to room`);
+    this.server.to(game._id.toString()).emit('gameStarted', game);
+  }
+}
   /**
    * Handle player moves
    */
@@ -154,7 +165,7 @@ async handleMakeMove(
   await client.join(data.gameId);
   const game = await this.gameService.makeMove(data.gameId, userId, data.dto);
 
-  // ✅ Broadcast move to both players
+  // Broadcast move to both players
   this.server.to(game._id.toString()).emit('moveMade', {
     gameId: game._id,
     move: data.dto,
@@ -215,4 +226,21 @@ async handleMakeMove(
   emitGameUpdate(gameId: string, payload: any) {
     this.server.to(gameId).emit('moveMade', payload);
   }
+
+@SubscribeMessage('joinByInvite')
+async handleJoinByInvite(
+  @MessageBody() data: { inviteCode: string },
+  @ConnectedSocket() client: Socket,
+) {
+  const userId = client.data?.user?.sub as string;
+  if (!userId) throw new WsException("Unauthenticated socket");
+
+  const game = await this.gameService.joinByInviteCode(data.inviteCode, userId);
+  await client.join(game._id.toString());
+
+  this.server.to(game._id.toString()).emit("playerJoined", { userId });
+
+  return game;
+}
+
 }

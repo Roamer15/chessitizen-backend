@@ -42,7 +42,24 @@ export class GameService {
     return user;
   }
 
-  handleGameOver(game: Game, chess: Chess, winner: Winner) {
+  // handleGameOver(game: Game, chess: Chess, winner: Winner) {
+  //   game.gameStatus = GameStatus.ENDED;
+  //   game.endedAt = new Date();
+
+  //   if (chess.isCheckmate()) {
+  //     game.result = { outcome: ResultReason.CHECKMATE, winner };
+  //   } else if (chess.isDraw()) {
+  //     let outcome = ResultReason.DRAW_50;
+  //     if (chess.isStalemate()) outcome = ResultReason.STALEMATE;
+  //     else if (chess.isInsufficientMaterial()) outcome = ResultReason.INSUFFICIENT_MATERIAL;
+  //     else if (chess.isThreefoldRepetition()) outcome = ResultReason.THREEFOLD_REPETITION;
+  //     else if (chess.isDrawByFiftyMoves()) outcome = ResultReason.DRAW_50;
+  //     game.result = { outcome, winner: Winner.UNDECICED };
+  //   }
+
+  //   return game.save();
+  // }
+  async handleGameOver(game: Game, chess: Chess, winner: Winner) {
     game.gameStatus = GameStatus.ENDED;
     game.endedAt = new Date();
 
@@ -57,7 +74,75 @@ export class GameService {
       game.result = { outcome, winner: Winner.UNDECICED };
     }
 
+    // Update player ratings & stats
+    if (game.whitePlayer && game.blackPlayer) {
+      const white = await this.userModel.findById(game.whitePlayer);
+      const black = await this.userModel.findById(game.blackPlayer);
+
+      if (white && black) {
+        if (winner === Winner.WHITEPLAYER) {
+          this.updatePlayerStats(white, 'win', game.vsAI);
+          this.updatePlayerStats(black, 'loss', game.vsAI);
+        } else if (winner === Winner.BLACKPLAYER) {
+          this.updatePlayerStats(black, 'win', game.vsAI);
+          this.updatePlayerStats(white, 'loss', game.vsAI);
+        } else {
+          // Draw
+          this.updatePlayerStats(white, 'draw', game.vsAI);
+          this.updatePlayerStats(black, 'draw', game.vsAI);
+        }
+
+        await Promise.all([white.save(), black.save()]);
+      }
+    }
+
     return game.save();
+  }
+
+  // helper to update stats
+  private updatePlayerStats(user: User, result: 'win' | 'loss' | 'draw', vsAI: boolean) {
+    if (!user.stats) {
+      user.stats = {
+        wins: { ai: 0, human: 0 },
+        losses: { ai: 0, human: 0 },
+        draws: 0,
+        rating: 800,
+        highestRating: 800,
+        streak: 0,
+      };
+    }
+
+    switch (result) {
+      case 'win':
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        if (vsAI) user.stats.wins.ai += 1;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        else user.stats.wins.human += 1;
+        user.stats.rating += 10;
+        user.stats.streak += 1;
+        break;
+
+      case 'loss':
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        if (vsAI) user.stats.losses.ai += 1;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        else user.stats.losses.human += 1;
+        user.stats.rating = Math.max(100, user.stats.rating - 10); // don't go below 100
+        user.stats.streak = 0; // reset streak on loss
+        break;
+
+      case 'draw':
+        user.stats.draws += 1;
+        user.stats.rating += 5;
+        // streak unchanged
+        break;
+    }
+
+    // track highest rating
+    if (user.stats.rating > user.stats.highestRating) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      user.stats.highestRating = user.stats.rating;
+    }
   }
 
   getAiSkillLevel(aiDifficulty: string) {
@@ -148,6 +233,29 @@ export class GameService {
     game.endedAt = new Date();
     game.result = { outcome: reason, winner };
     this.logger.log(`Ending game with reason: ${reason} and winner ${winner}`);
+    return this.finalizeGame(game, game.result.winner);
+  }
+
+  private async finalizeGame(game: Game, winner: Winner): Promise<Game> {
+    if (game.whitePlayer && game.blackPlayer) {
+      const white = await this.userModel.findById(game.whitePlayer);
+      const black = await this.userModel.findById(game.blackPlayer);
+
+      if (white && black) {
+        if (winner === Winner.WHITEPLAYER) {
+          this.updatePlayerStats(white, 'win', game.vsAI);
+
+          this.updatePlayerStats(black, 'loss', game.vsAI);
+        } else if (winner === Winner.BLACKPLAYER) {
+          this.updatePlayerStats(black, 'win', game.vsAI);
+        } else {
+          this.updatePlayerStats(white, 'draw', game.vsAI);
+          this.updatePlayerStats(black, 'draw', game.vsAI);
+        }
+
+        await Promise.all([white.save(), black.save()]);
+      }
+    }
     return game.save();
   }
 

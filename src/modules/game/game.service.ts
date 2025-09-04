@@ -19,6 +19,26 @@ interface skillSet {
   depth: number;
 }
 
+interface PopulatedUser {
+  _id: Types.ObjectId;
+  username?: string;
+  stats?: {
+    rating?: number;
+  };
+}
+
+interface PopulatedGame {
+  _id: Types.ObjectId;
+  whitePlayer?: PopulatedUser;
+  blackPlayer?: PopulatedUser;
+  result: {
+    winner: Winner;
+    outcome: ResultReason;
+  };
+  endedAt: Date;
+  gameStatus: GameStatus;
+}
+
 @Injectable()
 export class GameService {
   constructor(
@@ -416,6 +436,68 @@ export class GameService {
         { whitePlayer: userId, gameStatus: GameStatus.ONGOING },
         { blackPlayer: userId, gameStatus: GameStatus.ONGOING },
       ],
+    });
+  }
+
+  // async getUserGameHistory(userId: string) {
+  //   const games = await this.gameModel
+  //     .find({
+  //       $or: [{ whitePlayer: userId }, { blackPlayer: userId }],
+  //       gameStatus: GameStatus.ENDED,
+  //     })
+  //     .sort({ endedAt: -1 })
+  //     .limit(20)
+  //     .populate('whitePlayer', 'username stats.rating')
+  //     .populate('blackPlayer', 'username stats.rating')
+  //     .lean();
+
+  //   return games.map((g) => {
+  //     const isWhite = g.whitePlayer?._id?.toString() === userId;
+  //     const opponent = isWhite ? g.blackPlayer : g.whitePlayer;
+
+  //     let outcome: 'WIN' | 'LOSS' | 'DRAW' = 'DRAW';
+
+  //     if (g.result.winner === Winner.WHITEPLAYER && isWhite) outcome = 'WIN';
+  //     else if (g.result.winner === Winner.BLACKPLAYER && !isWhite) outcome = 'WIN';
+  //     else if (g.result.winner !== Winner.UNDECICED) outcome = 'LOSS';
+
+  //     return {
+  //       opponent: opponent?.username || 'Unknown',
+  //       opponentRating: opponent?.stats?.rating || 800,
+  //       outcome,
+  //       endedAt: g.endedAt,
+  //     };
+  //   });
+  // }
+
+  async getUserGameHistory(userId: string) {
+    const games = await this.gameModel
+      .find({
+        $or: [{ whitePlayer: userId }, { blackPlayer: userId }],
+        gameStatus: GameStatus.ENDED,
+      })
+      .sort({ endedAt: -1 })
+      .limit(20)
+      .populate<{ whitePlayer: PopulatedUser }>('whitePlayer', 'username stats.rating')
+      .populate<{ blackPlayer: PopulatedUser }>('blackPlayer', 'username stats.rating')
+      .lean<PopulatedGame[]>();
+
+    return games.map((g) => {
+      const isWhite = g.whitePlayer?._id?.toString() === userId;
+      const opponent = isWhite ? g.blackPlayer : g.whitePlayer;
+
+      let outcome: 'WIN' | 'LOSS' | 'DRAW' = 'DRAW';
+
+      if (g.result.winner === Winner.WHITEPLAYER && isWhite) outcome = 'WIN';
+      else if (g.result.winner === Winner.BLACKPLAYER && !isWhite) outcome = 'WIN';
+      else if (g.result.winner !== Winner.UNDECICED) outcome = 'LOSS';
+
+      return {
+        opponent: opponent?.username || 'Unknown',
+        opponentRating: opponent?.stats?.rating || 800,
+        outcome, // Don't forget to include outcome in the return!
+        endedAt: g.endedAt,
+      };
     });
   }
 

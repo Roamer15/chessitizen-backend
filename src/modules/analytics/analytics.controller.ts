@@ -17,7 +17,10 @@ export class AnalyticsController {
   }
 
   @Patch(':id/profile')
-  async updateProfile(@Param('id') userId: string, @Body() updates: { username?: string }) {
+  async updateProfile(
+    @Param('id') userId: string,
+    @Body() updates: { username?: string; avatarUrl?: string },
+  ) {
     return this.analyticsService.updateProfile(userId, updates);
   }
 }

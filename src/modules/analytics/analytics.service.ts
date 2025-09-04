@@ -102,12 +102,16 @@ export class AnalyticsService {
     });
   }
 
-  async updateProfile(userId: string, updates: { username?: string }) {
+  async updateProfile(userId: string, updates: { username?: string; avatarUrl?: string }) {
     const user = await this.userModel.findById(userId);
     if (!user) throwHttpError(ErrorCode.USER_NOT_FOUND);
 
     if (updates.username) {
       user.username = updates.username;
+    }
+
+    if (updates.avatarUrl) {
+      user.avatarUrl = updates.avatarUrl;
     }
 
     await user.save();

@@ -6,8 +6,14 @@ export class User extends Document {
   @Prop({ required: true, unique: true })
   email: string;
 
-  @Prop({ required: false, unique: false })
+  @Prop({ required: false, unique: true })
   username?: string;
+
+  @Prop({
+    default:
+      'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTivAonIfY9U9_eWZyM9b-rtva6GReaVPEizg&s',
+  })
+  avatarUrl?: string;
 
   @Prop({ select: false })
   otpSecret?: string;

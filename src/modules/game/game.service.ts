@@ -14,7 +14,6 @@ import { AiService } from 'src/ai/ai.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { GameGateway } from 'src/gateway/game.gateway';
 import { randomBytes } from 'crypto';
-import { NotFoundError } from 'rxjs';
 
 interface SkillSet {
   skillLevel: number;
@@ -30,7 +29,6 @@ export class GameService {
     private readonly aiService: AiService,
     private readonly eventEmitter: EventEmitter2,
     private readonly gameGateway: GameGateway,
-    
   ) {}
 
   /** ----------------- GAME FETCHERS ----------------- */
@@ -68,12 +66,18 @@ export class GameService {
   /** ----------------- AI ----------------- */
   getAiSkillLevel(aiDifficulty: string): SkillSet {
     switch (aiDifficulty) {
-      case 'easy': return { skillLevel: 3, depth: 6 };
-      case 'medium': return { skillLevel: 7, depth: 1 };
-      case 'hard': return { skillLevel: 12, depth: 12 };
-      case 'expert': return { skillLevel: 16, depth: 15 };
-      case 'grandmaster': return { skillLevel: 20, depth: 18 };
-      default: return { skillLevel: 7, depth: 9 };
+      case 'easy':
+        return { skillLevel: 3, depth: 6 };
+      case 'medium':
+        return { skillLevel: 7, depth: 1 };
+      case 'hard':
+        return { skillLevel: 12, depth: 12 };
+      case 'expert':
+        return { skillLevel: 16, depth: 15 };
+      case 'grandmaster':
+        return { skillLevel: 20, depth: 18 };
+      default:
+        return { skillLevel: 7, depth: 9 };
     }
   }
 
@@ -171,51 +175,54 @@ export class GameService {
   }
 
   /** ----------------- MOVES ----------------- */
- private gameLocks: Record<string, boolean> = {};
+  private gameLocks: Record<string, boolean> = {};
 
-async makeMove(gameId: string, userId: string, dto: MakeMoveDto) {
-  while (this.gameLocks[gameId]) {
-    await new Promise(res => setTimeout(res, 5));
-  }
-  this.gameLocks[gameId] = true;
-
-  try {
-    const { from, to, promotion } = dto;
-    const game = await this.getGame(gameId);
-
-    if (game.gameStatus !== GameStatus.ONGOING) throwHttpError(ErrorCode.GAME_INVALID);
-
-    const chess = new Chess(game.currentFen);
-    const turnColor = chess.turn() === 'w' ? 'whitePlayer' : 'blackPlayer';
-
-    if (game[turnColor]?.toString() !== userId) throwHttpError(ErrorCode.NOT_YOUR_TURN);
-
-    const move = chess.move({ from, to, promotion });
-    if (!move) throwHttpError(ErrorCode.INVALID_MOVE);
-
-    game.currentFen = chess.fen();
-    game.moves.push({ from, to, fen: chess.fen(), san: move.san });
-
-    if (chess.isGameOver()) {
-      return this.handleGameOver(game, chess, turnColor === 'whitePlayer' ? Winner.WHITE : Winner.BLACK);
+  async makeMove(gameId: string, userId: string, dto: MakeMoveDto) {
+    while (this.gameLocks[gameId]) {
+      await new Promise((res) => setTimeout(res, 5));
     }
+    this.gameLocks[gameId] = true;
 
-    if (game.vsAI) {
-      this.eventEmitter.emit('game.aiMove', {
-        gameId: game._id,
-        fen: game.currentFen,
-        difficulty: game.aiDifficulty,
-      });
+    try {
+      const { from, to, promotion } = dto;
+      const game = await this.getGame(gameId);
+
+      if (game.gameStatus !== GameStatus.ONGOING) throwHttpError(ErrorCode.GAME_INVALID);
+
+      const chess = new Chess(game.currentFen);
+      const turnColor = chess.turn() === 'w' ? 'whitePlayer' : 'blackPlayer';
+
+      if (game[turnColor]?.toString() !== userId) throwHttpError(ErrorCode.NOT_YOUR_TURN);
+
+      const move = chess.move({ from, to, promotion });
+      if (!move) throwHttpError(ErrorCode.INVALID_MOVE);
+
+      game.currentFen = chess.fen();
+      game.moves.push({ from, to, fen: chess.fen(), san: move.san });
+
+      if (chess.isGameOver()) {
+        return this.handleGameOver(
+          game,
+          chess,
+          turnColor === 'whitePlayer' ? Winner.WHITE : Winner.BLACK,
+        );
+      }
+
+      if (game.vsAI) {
+        this.eventEmitter.emit('game.aiMove', {
+          gameId: game._id,
+          fen: game.currentFen,
+          difficulty: game.aiDifficulty,
+        });
+      }
+
+      const savedGame = await game.save();
+      this.broadcastGameUpdate(savedGame);
+      return savedGame;
+    } finally {
+      this.gameLocks[gameId] = false;
     }
-
-    const savedGame = await game.save();
-    this.broadcastGameUpdate(savedGame);
-    return savedGame;
-  } finally {
-    this.gameLocks[gameId] = false;
   }
-}
-
 
   /** ----------------- GAME UTILS ----------------- */
   async endGame(gameId: string, reason: ResultReason, winner: Winner): Promise<Game> {
@@ -243,12 +250,14 @@ async makeMove(gameId: string, userId: string, dto: MakeMoveDto) {
     if (game.moves.length === 0) throwHttpError(ErrorCode.INVALID_MOVE);
 
     const chess = new Chess(game.currentFen);
-    const lastMove = game.moves.pop();
     const lastTurnColor = chess.turn() === 'w' ? 'blackPlayer' : 'whitePlayer';
 
     if (game[lastTurnColor]?.toString() !== userId) throwHttpError(ErrorCode.NO_MOVES_TO_UNDO);
 
-    game.currentFen = game.moves.length > 0 ? game.moves[game.moves.length - 1].fen : 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+    game.currentFen =
+      game.moves.length > 0
+        ? game.moves[game.moves.length - 1].fen
+        : 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
     const savedGame = await game.save();
     this.broadcastGameUpdate(savedGame);
     return savedGame;
@@ -268,44 +277,37 @@ async makeMove(gameId: string, userId: string, dto: MakeMoveDto) {
     this.gameGateway.server.to(gameId).emit('gameStarted', game);
   }
 
-async generateInviteLink(gameId: string): Promise<{ inviteCode: string; inviteLink: string }> {
-  const inviteCode = randomBytes(6).toString('hex');
-  const game = await this.gameModel.findByIdAndUpdate(
-    gameId,
-    { inviteCode },
-    { new: true }
-  );
-  if (!game) throw new NotFoundException('Game not found');
+  async generateInviteLink(gameId: string): Promise<{ inviteCode: string; inviteLink: string }> {
+    const inviteCode = randomBytes(6).toString('hex');
+    const game = await this.gameModel.findByIdAndUpdate(gameId, { inviteCode }, { new: true });
+    if (!game) throw new NotFoundException('Game not found');
 
-  return {
-    inviteCode,
-    inviteLink: `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/games/join/${inviteCode}`,
-  };
-}
-
-async joinByInviteCode(inviteCode: string, userId: string) {
-  const game = await this.gameModel.findOne({ inviteCode });
-  if (!game) throw new NotFoundException('Invalid invite code');
-
-  const userObjectId = new Types.ObjectId(userId);
-
-  // If white slot empty → fill it
-  if (!game.whitePlayer) {
-    game.whitePlayer = userObjectId;
-  }
-  // Else if black slot empty → fill it
-  else if (!game.blackPlayer) {
-    game.blackPlayer = userObjectId;
-  }
-  // Else game already full
-  else {
-    throw new BadRequestException('Game already has two players');
+    return {
+      inviteCode,
+      inviteLink: `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/games/join/${inviteCode}`,
+    };
   }
 
-  await game.save();
-  return game;
+  async joinByInviteCode(inviteCode: string, userId: string) {
+    const game = await this.gameModel.findOne({ inviteCode });
+    if (!game) throw new NotFoundException('Invalid invite code');
+
+    const userObjectId = new Types.ObjectId(userId);
+
+    // If white slot empty → fill it
+    if (!game.whitePlayer) {
+      game.whitePlayer = userObjectId;
+    }
+    // Else if black slot empty → fill it
+    else if (!game.blackPlayer) {
+      game.blackPlayer = userObjectId;
+    }
+    // Else game already full
+    else {
+      throw new BadRequestException('Game already has two players');
+    }
+
+    await game.save();
+    return game;
+  }
 }
-
-}
-
-

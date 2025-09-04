@@ -39,15 +39,16 @@ export class GameController {
     return this.gameService.endGame(gameId, body.reason, body.winner);
   }
 
-@UseGuards(JwtAuthGuard)
-@Post(':id/invite')
-async createInvite(@Param('id') gameId: string, @Req() req) {
-  return this.gameService.generateInviteLink(gameId);
-}
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/invite')
+  async createInvite(@Param('id') gameId: string) {
+    return this.gameService.generateInviteLink(gameId);
+  }
 
-@UseGuards(JwtAuthGuard)
-@Post('join/:inviteCode')
-async joinByInvite(@Param('inviteCode') inviteCode: string, @Req() req) {
-  return this.gameService.joinByInviteCode(inviteCode, req.user.id);
-}
+  @UseGuards(JwtAuthGuard)
+  @Post('join/:inviteCode')
+  async joinByInvite(@Param('inviteCode') inviteCode: string, @Req() req) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
+    return this.gameService.joinByInviteCode(inviteCode, req?.user?.id);
+  }
 }

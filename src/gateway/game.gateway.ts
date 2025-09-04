@@ -1,4 +1,3 @@
-// game.gateway.ts
 import { forwardRef, Inject, UseGuards } from '@nestjs/common';
 import {
   SubscribeMessage,
@@ -17,20 +16,7 @@ import { StartGameDto } from 'src/modules/game/dto/start-game.dto';
 import { GameStatus, ResultReason, Winner } from 'src/shared/enum/game.enum';
 import { WsAuthGuard } from './guard/ws-auth.guard';
 import { GameService } from '../modules/game/game.service';
-
-interface Move {
-  from: string;
-  to: string;
-  fen: string;
-  san?: string;
-  timestamp?: Date;
-}
-
-interface GameData {
-  gameId: string;
-  moves: Move[];
-  fen: string;
-}
+import { Game } from 'src/schema/game.schema';
 
 @WebSocketGateway({
   cors: { origin: '*' }, // adjust for production
@@ -55,7 +41,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   /**
-   * Player joins a game room
+   * Legacy: Player joins a game room (works for AI or multiplayer spectators)
    */
   @SubscribeMessage('joinGame')
   async handleJoinGame(@MessageBody() gameId: string, @ConnectedSocket() client: Socket) {
@@ -65,24 +51,98 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   /**
-   * Start a new game vs AI
+   * Player joins a multiplayer game as the second player
+   */
+
+  @SubscribeMessage('joinMultiplayerGame')
+  async handleJoinMultiplayerGame(
+    @MessageBody() gameId: string | null,
+    @ConnectedSocket() client: Socket,
+  ) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const userId = client.data?.user?.sub as string;
+    if (!userId) throw new WsException('Unauthenticated socket');
+
+    try {
+      const game: Game = gameId
+        ? await this.gameService.joinGame(gameId, userId)
+        : await this.gameService.autoJoinOrCreate(userId);
+
+      const gameRoom = game._id.toString(); // always stringify
+
+      // Join the socket to the game room
+      if (!client.rooms.has(gameRoom)) {
+        await client.join(gameRoom);
+      }
+
+      // Notify the joining client
+      client.emit('gameJoined', {
+        gameId: gameRoom,
+        game,
+        message: gameId
+          ? `Player ${userId} joined the game.`
+          : game.gameStatus === GameStatus.WAITING
+            ? 'Waiting for an opponent...'
+            : 'Game started!',
+      });
+
+      // Notify all players in the room (including self)
+      this.server.to(gameRoom).emit('playerJoined', {
+        game,
+        player: userId,
+        message: `Player ${userId} joined the game.`,
+      });
+
+      // ✅ Emit gameStarted if both players are present
+      if (game.isMultiplayer && game.whitePlayer && game.blackPlayer) {
+        this.logger.log(`Emitting gameStarted for multiplayer game ${game._id}`);
+        this.server.to(gameRoom).emit('gameStarted', game);
+      }
+
+      return game;
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : 'Unable to join game';
+      this.logger.error(
+        `joinMultiplayerGame failed for ${userId}: ${errMsg}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      client.emit('joinError', { gameId, message: errMsg });
+    }
+  }
+  /**
+   * Start a new game (vs AI or multiplayer)
    */
   @SubscribeMessage('startGame')
   async handleStartGame(@MessageBody() dto: StartGameDto, @ConnectedSocket() client: Socket) {
-    // Assumes a WS auth guard/middleware attaches the JWT payload to client.data.user
-    this.logger.log(`[v0] WebSocket startGame called - ClientID: ${client.id}`);
+    this.logger.log(`WebSocket startGame called - ClientID: ${client.id}`);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const userId = client.data?.user?.sub as string;
-    if (!userId) {
-      throw new WsException('Unauthenticated socket');
-    }
+    if (!userId) throw new WsException('Unauthenticated socket');
+
     const game = await this.gameService.startGame(userId, dto);
     await client.join(game._id.toString());
-    // client.emit('gameStarted', game);
-    this.logger.log(`Emitting gameStarted for ${game._id} to room`);
-    this.server.to(game._id.toString()).emit('gameStarted', game);
-  }
 
+    if (game.isMultiplayer) {
+      // Ensure inviteCode exists
+      if (!game.inviteCode) {
+        const inviteLinkObj = await this.gameService.generateInviteLink(game._id);
+        // `generateInviteLink` returns an object, extract code from inviteLink string
+        const inviteCode = inviteLinkObj.inviteLink.split('/').pop();
+        game.inviteCode = inviteCode;
+        await game.save();
+      }
+
+      // Emit both options: direct join OR invite-based join
+      this.server.to(game._id.toString()).emit('gameWaiting', {
+        gameId: game._id,
+        inviteCode: game.inviteCode, // use this for invite-based join
+        message: 'Game created. Another player can join directly or via invite link.',
+      });
+    } else {
+      this.logger.log(`Emitting gameStarted for ${game._id} to room`);
+      this.server.to(game._id.toString()).emit('gameStarted', game);
+    }
+  }
   /**
    * Handle player moves
    */
@@ -94,22 +154,27 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.logger.log(
       `WebSocket makeMove received - GameID: ${data.gameId}, ClientID: ${client.id}, Move: ${JSON.stringify(data.dto)}`,
     );
+
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const userId = client.data?.user?.sub as string;
-    if (!userId) {
-      throw new WsException('Unauthenticated socket');
-    }
+    if (!userId) throw new WsException('Unauthenticated socket');
+
     await client.join(data.gameId);
     const game = await this.gameService.makeMove(data.gameId, userId, data.dto);
-    // Broadcast updated game state to everyone in the room
-    this.server.to(game._id.toString()).emit('moveMade', game);
 
-    // if game ended, notify all players
+    // Broadcast move to both players
+    this.server.to(game._id.toString()).emit('moveMade', {
+      gameId: game._id,
+      move: data.dto,
+      fen: game.currentFen, // new board state
+      game,
+    });
+
+    // ✅ If game ended, notify both players
     if (game.gameStatus === GameStatus.ENDED) {
       this.server.to(game._id.toString()).emit('gameEnded', game);
     }
   }
-
   /**
    * End game manually (abort/timeout/etc)
    */
@@ -130,7 +195,6 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     await client.join(data.gameId);
     const game = await this.gameService.endGame(data.gameId, validatedReason, validatedWinner);
-    // client.emit('gameEnded', game);
     this.server.to(game._id.toString()).emit('gameEnded', game);
   }
 
@@ -138,63 +202,43 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * Reset the chess board to original starting position
    */
   @SubscribeMessage('resetBoard')
-  async handleResetBoard(client: Socket, data: { gameId: string }) {
+  async handleResetBoard(
+    @MessageBody() data: { gameId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
     this.logger.log(`WebSocket resetBoard called - GameID: ${data.gameId}, ClientID: ${client.id}`);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const userId = client.data?.user?.sub as string;
-    if (!userId) {
-      throw new WsException('Unauthenticated socket');
-    }
+    if (!userId) throw new WsException('Unauthenticated socket');
 
     await client.join(data.gameId);
     const game = await this.gameService.resetBoard(data.gameId);
-
-    // Broadcast the reset board state to all clients in the room
+    this.server.to(game._id.toString()).emit('moveMade', game);
     this.server.to(game._id.toString()).emit('boardReset', game);
     this.logger.log(`Board reset for game ${data.gameId}`);
   }
 
   /**
-   * Undo a move when playing against Ai
+   * Broadcast game updates (used by GameService)
    */
-  @SubscribeMessage('undoMove')
-  async handleUndoMove(client: Socket, data: { gameId: string }) {
-    this.logger.log(`WebSocket makeMove received - GameID: ${data.gameId}, ClientID: ${client.id}`);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    const userId = client.data?.user?.sub as string;
-    if (!userId) {
-      throw new WsException('Unauthenticated socket');
-    }
-    await client.join(data.gameId);
-    const game = await this.gameService.undoMove(data.gameId, userId);
-
-    this.server.to(game._id.toString()).emit('moveUndone', game);
-    this.logger.log(`Move undone successfully`);
+  emitGameUpdate(gameId: string, payload: any) {
+    this.server.to(gameId).emit('moveMade', payload);
   }
 
-  @SubscribeMessage('getHistory')
-  async handleGameHistory(client: Socket, data: { gameId: string }) {
-    this.logger.log('Retrieveing game history');
+  @SubscribeMessage('joinByInvite')
+  async handleJoinByInvite(
+    @MessageBody() data: { inviteCode: string },
+    @ConnectedSocket() client: Socket,
+  ) {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const userId = client.data?.user?.sub as string;
-    if (!userId) {
-      throw new WsException('Unauthenticated socket');
-    }
-    await client.join(data.gameId);
-    const game = await this.gameService.getMoveHistory(data.gameId);
-    const moves = game.moves;
-    this.server.to(game._id.toString()).emit('gameHistory', moves);
-  }
+    if (!userId) throw new WsException('Unauthenticated socket');
 
-  //PVP event
-  emitGameUpdate(gameId: string, payload: GameData) {
-    this.server.to(gameId).emit('gameUpdate', payload);
-    // Also emit aiMoveMade for compatibility with client expectations
-    this.server.to(gameId).emit('aiMoveMade', {
-      gameId: payload.gameId,
-      move: payload.moves[payload.moves.length - 1], // Last move
-      fen: payload.fen,
-      explanation: 'AI move completed',
-    });
+    const game = await this.gameService.joinByInviteCode(data.inviteCode, userId);
+    await client.join(game._id.toString());
+
+    this.server.to(game._id.toString()).emit('playerJoined', { userId });
+
+    return game;
   }
 }

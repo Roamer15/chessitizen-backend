@@ -29,6 +29,9 @@ export class Game extends Document {
   @Prop({ default: GameStatus.ONGOING, enum: Object.values(GameStatus) })
   gameStatus: GameStatus;
 
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], default: [] })
+  players: Types.ObjectId[];
+
   @Prop({
     type: [
       {
@@ -67,6 +70,12 @@ export class Game extends Document {
     default: GameLevel.MEDIUM,
   })
   aiDifficulty: GameLevel;
+
+  @Prop({ default: false })
+  isMultiplayer: boolean;
+
+  @Prop({ unique: true, sparse: true })
+  inviteCode?: string;
 }
 
 export const GameSchema = SchemaFactory.createForClass(Game);

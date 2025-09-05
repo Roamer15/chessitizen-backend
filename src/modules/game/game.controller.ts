@@ -1,7 +1,7 @@
 import { Controller, Post, Body, Param, Get, UseGuards, Req } from '@nestjs/common';
 import { GameService } from './game.service';
 import { StartGameDto } from './dto/start-game.dto';
-// import { MakeMoveDto } from './dto/make-move.dto';
+import { MakeMoveDto } from './dto/make-move.dto';
 import { Game } from 'src/schema/game.schema';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -29,7 +29,16 @@ export class GameController {
     return this.gameService.getGame(gameId);
   }
 
-  // Optionally: end a game manually (aborted)
+  @Post(':gameId/move')
+  async makeMove(
+    @Req() req: AuthRequest,
+    @Param('gameId') gameId: string,
+    @Body() dto: MakeMoveDto,
+  ): Promise<Game> {
+    const userId = req.user['sub'];
+    return await this.gameService.makeMove(gameId, userId, dto);
+  }
+
   @Post(':gameId/end')
   async endGame(
     @Req() req: AuthRequest,
@@ -40,9 +49,10 @@ export class GameController {
   }
 
   @Get(':id/history')
-  async getGameHistory(@Param(':id') id: string) {
+  async getGameHistory(@Param('id') id: string) {
     return this.gameService.getUserGameHistory(id);
   }
+
   @UseGuards(JwtAuthGuard)
   @Post(':id/invite')
   async createInvite(@Param('id') gameId: string) {

@@ -36,9 +36,11 @@ import { Game } from 'src/schema/game.schema';
 
 @WebSocketGateway({
   cors: {
-    origin: 'http://localhost:8081',
+    origin: ['http://localhost:8081', 'http://10.127.64.30:8081'],
     pingTimeout: 60000, // 60 seconds
     pingInterval: 25000, // 25 seconds
+    methods: ['GET', 'POST', 'PATCH'],
+    transports: ['websocket', 'polling'],
   },
 })
 @UseGuards(WsAuthGuard)

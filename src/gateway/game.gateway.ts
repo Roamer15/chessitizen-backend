@@ -296,6 +296,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       fen: game.currentFen, // new board state
       game,
     });
+    this.logger.log('Move has been made', JSON.stringify(game));
 
     // ✅ If game ended, notify both players
     if (game.gameStatus === GameStatus.ENDED) {

@@ -1,0 +1,540 @@
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
+import { LoggerService } from 'src/logger/logger.service';
+import { Game } from 'src/schema/game.schema';
+import { User } from 'src/schema/user.schema';
+import { StartGameDto } from './dto/start-game.dto';
+import { MakeMoveDto } from './dto/make-move.dto';
+import { throwHttpError } from 'src/common/errors/http-exception.helper';
+import { ErrorCode } from 'src/common/errors/error-codes.enum';
+import { GameStatus, ResultReason, Winner } from 'src/shared/enum/game.enum';
+import { Chess } from 'chess.js';
+import { AiService } from 'src/ai/ai.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { GameGateway } from 'src/gateway/game.gateway';
+import { randomBytes } from 'crypto';
+interface PopulatedUser {
+  _id: Types.ObjectId;
+  username?: string;
+  stats?: {
+    rating?: number;
+  };
+}
+
+interface PopulatedGame {
+  _id: Types.ObjectId;
+  whitePlayer?: PopulatedUser;
+  blackPlayer?: PopulatedUser;
+  result: {
+    winner: Winner;
+    outcome: ResultReason;
+  };
+  endedAt: Date;
+  gameStatus: GameStatus;
+}
+
+@Injectable()
+export class GameService {
+  constructor(
+    @InjectModel(Game.name) private gameModel: Model<Game>,
+    @InjectModel(User.name) private userModel: Model<User>,
+    private readonly logger: LoggerService,
+    private readonly aiService: AiService,
+    private readonly eventEmitter: EventEmitter2,
+    private readonly gameGateway: GameGateway,
+  ) {}
+
+  /** ----------------- GAME FETCHERS ----------------- */
+  async getGame(gameId: string): Promise<Game> {
+    const game = await this.gameModel.findById(gameId);
+    if (!game) throwHttpError(ErrorCode.GAME_NOT_FOUND);
+    return game;
+  }
+
+  async getPlayer(userId: string): Promise<User> {
+    const user = await this.userModel.findById(userId);
+    if (!user) throwHttpError(ErrorCode.USER_NOT_FOUND);
+    return user;
+  }
+
+  async handleGameOver(game: Game, chess: Chess, winner: Winner) {
+    game.gameStatus = GameStatus.ENDED;
+    game.endedAt = new Date();
+
+    if (chess.isCheckmate()) {
+      game.result = { outcome: ResultReason.CHECKMATE, winner };
+    } else if (chess.isDraw()) {
+      let outcome = ResultReason.DRAW_50;
+      if (chess.isStalemate()) outcome = ResultReason.STALEMATE;
+      else if (chess.isInsufficientMaterial()) outcome = ResultReason.INSUFFICIENT_MATERIAL;
+      else if (chess.isThreefoldRepetition()) outcome = ResultReason.THREEFOLD_REPETITION;
+      else if (chess.isDrawByFiftyMoves()) outcome = ResultReason.DRAW_50;
+      game.result = { outcome, winner: Winner.UNDECICED };
+    }
+
+    // Update player ratings & stats
+    if (game.whitePlayer && game.blackPlayer) {
+      const white = await this.userModel.findById(game.whitePlayer);
+      const black = await this.userModel.findById(game.blackPlayer);
+
+      if (white && black) {
+        if (winner === Winner.WHITEPLAYER) {
+          this.updatePlayerStats(white, 'win', game.vsAI);
+          this.updatePlayerStats(black, 'loss', game.vsAI);
+        } else if (winner === Winner.BLACKPLAYER) {
+          this.updatePlayerStats(black, 'win', game.vsAI);
+          this.updatePlayerStats(white, 'loss', game.vsAI);
+        } else {
+          // Draw
+          this.updatePlayerStats(white, 'draw', game.vsAI);
+          this.updatePlayerStats(black, 'draw', game.vsAI);
+        }
+
+        await Promise.all([white.save(), black.save()]);
+      }
+    }
+
+    return game.save();
+  }
+
+  // helper to update stats
+  private updatePlayerStats(user: User, result: 'win' | 'loss' | 'draw', vsAI: boolean) {
+    if (!user.stats) {
+      user.stats = {
+        wins: { ai: 0, human: 0 },
+        losses: { ai: 0, human: 0 },
+        draws: 0,
+        rating: 800,
+        highestRating: 800,
+        streak: 0,
+      };
+    }
+
+    switch (result) {
+      case 'win':
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        if (vsAI) user.stats.wins.ai += 1;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        else user.stats.wins.human += 1;
+        user.stats.rating += 10;
+        user.stats.streak += 1;
+        break;
+
+      case 'loss':
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        if (vsAI) user.stats.losses.ai += 1;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        else user.stats.losses.human += 1;
+        user.stats.rating = Math.max(100, user.stats.rating - 10); // don't go below 100
+        user.stats.streak = 0; // reset streak on loss
+        break;
+
+      case 'draw':
+        user.stats.draws += 1;
+        user.stats.rating += 5;
+        // streak unchanged
+        break;
+    }
+
+    // track highest rating
+    if (user.stats.rating > user.stats.highestRating) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      user.stats.highestRating = user.stats.rating;
+    }
+  }
+
+  getAiSkillLevel(aiDifficulty: string) {
+    switch (aiDifficulty) {
+      case 'easy':
+        return { skillLevel: 3, depth: 6 };
+      case 'medium':
+        return { skillLevel: 7, depth: 1 };
+      case 'hard':
+        return { skillLevel: 12, depth: 12 };
+      case 'expert':
+        return { skillLevel: 16, depth: 15 };
+      case 'grandmaster':
+        return { skillLevel: 20, depth: 18 };
+      default:
+        return { skillLevel: 7, depth: 9 };
+    }
+  }
+
+  /** ----------------- GAME START / CREATE ----------------- */
+  async startGame(userId: string, dto: StartGameDto): Promise<Game> {
+    this.logger.log(`Game starting for ${userId} with props: ${JSON.stringify(dto)}`);
+
+    // Multiplayer game
+    if (dto.isMultiplayer) {
+      const isWhite = Math.random() < 0.5;
+      const game = new this.gameModel({
+        whitePlayer: isWhite ? new Types.ObjectId(userId) : null,
+        blackPlayer: !isWhite ? new Types.ObjectId(userId) : null,
+        vsAI: false,
+        isMultiplayer: true,
+        gameStatus: GameStatus.WAITING,
+        currentFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+      });
+      return game.save();
+    }
+
+    // AI game
+    const color = dto.userColor ?? 'white';
+    const ai = dto.vsAI ?? true;
+    const game = new this.gameModel({
+      whitePlayer: color === 'white' ? new Types.ObjectId(userId) : null,
+      blackPlayer: color === 'black' ? new Types.ObjectId(userId) : null,
+      vsAI: ai,
+      userColor: color,
+      aiDifficulty: dto.aiDifficulty,
+      isMultiplayer: false,
+      gameStatus: GameStatus.ONGOING,
+      currentFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+    });
+    return game.save();
+  }
+
+  /** ----------------- MULTIPLAYER AUTO-JOIN ----------------- */
+  async findWaitingGame(): Promise<Game | null> {
+    return this.gameModel.findOne({
+      isMultiplayer: true,
+      gameStatus: GameStatus.WAITING,
+      blackPlayer: null,
+    });
+  }
+
+  async autoJoinOrCreate(userId: string): Promise<Game> {
+    let game = await this.findWaitingGame();
+
+    if (!game) {
+      // No waiting game → create new one
+      game = new this.gameModel({
+        whitePlayer: new Types.ObjectId(userId),
+        blackPlayer: null,
+        isMultiplayer: true,
+        vsAI: false,
+        gameStatus: GameStatus.WAITING,
+        currentFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+      });
+      return game.save();
+    }
+
+    // Join the waiting game as blackPlayer
+    game.blackPlayer = new Types.ObjectId(userId);
+    game.gameStatus = GameStatus.ONGOING;
+    await game.save();
+
+    // Notify both players
+    this.emitGameStart(game._id.toString(), game);
+
+    return game;
+  }
+
+  /** ----------------- JOIN EXISTING GAME ----------------- */
+  async joinGame(gameId: string, userId: string): Promise<Game> {
+    const game = await this.getGame(gameId);
+
+    if (!game.isMultiplayer) throwHttpError(ErrorCode.GAME_INVALID);
+
+    const whiteId = game.whitePlayer?.toString();
+    const blackId = game.blackPlayer?.toString();
+
+    if (whiteId && blackId) {
+      return this.startGame(userId, { isMultiplayer: true });
+    }
+
+    if (whiteId === userId || blackId === userId) throwHttpError(ErrorCode.GAME_INVALID);
+
+    if (!whiteId) game.whitePlayer = new Types.ObjectId(userId);
+    else game.blackPlayer = new Types.ObjectId(userId);
+
+    if (game.whitePlayer && game.blackPlayer) game.gameStatus = GameStatus.ONGOING;
+
+    return game.save();
+  }
+
+  /** ----------------- MOVES ----------------- */
+  private gameLocks: Record<string, boolean> = {};
+
+  async makeMove(gameId: string, userId: string, dto: MakeMoveDto) {
+    while (this.gameLocks[gameId]) {
+      await new Promise((res) => setTimeout(res, 5));
+    }
+    this.gameLocks[gameId] = true;
+
+    try {
+      const { from, to, promotion } = dto;
+      const game = await this.getGame(gameId);
+
+      if (game.gameStatus !== GameStatus.ONGOING) throwHttpError(ErrorCode.GAME_INVALID);
+
+      const chess = new Chess(game.currentFen);
+      const turnColor = chess.turn() === 'w' ? 'whitePlayer' : 'blackPlayer';
+
+      if (game[turnColor]?.toString() !== userId) throwHttpError(ErrorCode.NOT_YOUR_TURN);
+
+      const move = chess.move({ from, to, promotion });
+      if (!move) throwHttpError(ErrorCode.INVALID_MOVE);
+
+      game.currentFen = chess.fen();
+      game.moves.push({ from, to, fen: chess.fen(), san: move.san });
+
+      if (chess.isGameOver()) {
+        return this.handleGameOver(
+          game,
+          chess,
+          turnColor === 'whitePlayer' ? Winner.WHITEPLAYER : Winner.BLACKPLAYER,
+        );
+      }
+
+      if (game.vsAI) {
+        this.eventEmitter.emit('game.aiMove', {
+          gameId: game._id,
+          fen: game.currentFen,
+          difficulty: game.aiDifficulty,
+        });
+      }
+
+      const savedGame = await game.save();
+      this.broadcastGameUpdate(savedGame);
+      return savedGame;
+    } finally {
+      this.gameLocks[gameId] = false;
+    }
+  }
+
+  /** ----------------- GAME UTILS ----------------- */
+  async endGame(gameId: string, reason: ResultReason, winner: Winner): Promise<Game> {
+    const game = await this.getGame(gameId);
+    game.gameStatus = GameStatus.ENDED;
+    game.endedAt = new Date();
+    game.result = { outcome: reason, winner };
+    this.logger.log(`Ending game with reason: ${reason} and winner ${winner}`);
+    return this.finalizeGame(game, game.result.winner);
+  }
+
+  private async finalizeGame(game: Game, winner: Winner): Promise<Game> {
+    if (game.whitePlayer && game.blackPlayer) {
+      const white = await this.userModel.findById(game.whitePlayer);
+      const black = await this.userModel.findById(game.blackPlayer);
+
+      if (white && black) {
+        if (winner === Winner.WHITEPLAYER) {
+          this.updatePlayerStats(white, 'win', game.vsAI);
+
+          this.updatePlayerStats(black, 'loss', game.vsAI);
+        } else if (winner === Winner.BLACKPLAYER) {
+          this.updatePlayerStats(black, 'win', game.vsAI);
+        } else {
+          this.updatePlayerStats(white, 'draw', game.vsAI);
+          this.updatePlayerStats(black, 'draw', game.vsAI);
+        }
+
+        await Promise.all([white.save(), black.save()]);
+      }
+    }
+    return game.save();
+  }
+
+  async resetBoard(gameId: string): Promise<Game> {
+    const game = await this.getGame(gameId);
+    game.currentFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+    game.moves = [];
+    game.gameStatus = GameStatus.ONGOING;
+    const savedGame = await game.save();
+    this.broadcastGameUpdate(savedGame);
+    return savedGame;
+  }
+
+  async undoMove(gameId: string, userId: string): Promise<Game> {
+    const game = await this.getGame(gameId);
+    if (game.gameStatus !== GameStatus.ONGOING) throwHttpError(ErrorCode.GAME_INVALID);
+    if (game.moves.length === 0) throwHttpError(ErrorCode.INVALID_MOVE);
+
+    const chess = new Chess(game.currentFen);
+    const lastTurnColor = chess.turn() === 'w' ? 'blackPlayer' : 'whitePlayer';
+
+    if (game[lastTurnColor]?.toString() !== userId) throwHttpError(ErrorCode.NO_MOVES_TO_UNDO);
+
+    game.currentFen =
+      game.moves.length > 0
+        ? game.moves[game.moves.length - 1].fen
+        : 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+    const savedGame = await game.save();
+    this.broadcastGameUpdate(savedGame);
+    return savedGame;
+  }
+
+  async createMultiplayerGame(userId1: string, userId2: string): Promise<Game> {
+    const game = new this.gameModel({
+      whitePlayer: new Types.ObjectId(userId1),
+      blackPlayer: new Types.ObjectId(userId2),
+      vsAI: false, // Multiplayer game
+      gameStatus: GameStatus.ONGOING,
+      currentFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+    });
+    const savedGame = await game.save();
+
+    this.eventEmitter.emit('gameStarted', savedGame);
+
+    return savedGame;
+  }
+
+  async handleMultiplayerMove(gameId: string, userId: string, dto: MakeMoveDto) {
+    const game = await this.getGame(gameId);
+
+    // Validate it's multiplayer
+    if (game.vsAI) {
+      throw new Error('This is an AI game');
+    }
+
+    // Validate player turn
+    const chess = new Chess(game.currentFen);
+    const turnColor = chess.turn() === 'w' ? Winner.WHITEPLAYER : Winner.BLACKPLAYER;
+
+    if (game[turnColor]?.toString() !== userId) {
+      throw new Error('Not your turn');
+    }
+
+    // Process move (reuse your existing logic)
+    const move = chess.move({ from: dto.from, to: dto.to, promotion: dto.promotion });
+    game.currentFen = chess.fen();
+    game.moves.push({
+      from: dto.from,
+      to: dto.to,
+      fen: chess.fen(),
+      san: move.san,
+    });
+
+    // Check game over
+    if (chess.isGameOver()) {
+      await this.handleGameOver(game, chess, turnColor);
+    }
+
+    const savedGame = await game.save();
+    this.broadcastGameUpdate(savedGame);
+
+    return savedGame;
+  }
+
+  async findActiveGamesByUser(userId: string): Promise<Game[]> {
+    return this.gameModel.find({
+      $or: [
+        { whitePlayer: userId, gameStatus: GameStatus.ONGOING },
+        { blackPlayer: userId, gameStatus: GameStatus.ONGOING },
+      ],
+    });
+  }
+
+  // async getUserGameHistory(userId: string) {
+  //   const games = await this.gameModel
+  //     .find({
+  //       $or: [{ whitePlayer: userId }, { blackPlayer: userId }],
+  //       gameStatus: GameStatus.ENDED,
+  //     })
+  //     .sort({ endedAt: -1 })
+  //     .limit(20)
+  //     .populate('whitePlayer', 'username stats.rating')
+  //     .populate('blackPlayer', 'username stats.rating')
+  //     .lean();
+
+  //   return games.map((g) => {
+  //     const isWhite = g.whitePlayer?._id?.toString() === userId;
+  //     const opponent = isWhite ? g.blackPlayer : g.whitePlayer;
+
+  //     let outcome: 'WIN' | 'LOSS' | 'DRAW' = 'DRAW';
+
+  //     if (g.result.winner === Winner.WHITEPLAYER && isWhite) outcome = 'WIN';
+  //     else if (g.result.winner === Winner.BLACKPLAYER && !isWhite) outcome = 'WIN';
+  //     else if (g.result.winner !== Winner.UNDECICED) outcome = 'LOSS';
+
+  //     return {
+  //       opponent: opponent?.username || 'Unknown',
+  //       opponentRating: opponent?.stats?.rating || 800,
+  //       outcome,
+  //       endedAt: g.endedAt,
+  //     };
+  //   });
+  // }
+
+  async getUserGameHistory(userId: string) {
+    const userObjectId = new Types.ObjectId(userId);
+    const games = await this.gameModel
+      .find({
+        $or: [{ whitePlayer: userObjectId }, { blackPlayer: userObjectId }],
+        gameStatus: 'ended',
+      })
+      .sort({ endedAt: -1 })
+      .limit(20)
+      .populate<{ whitePlayer: PopulatedUser }>('whitePlayer', 'username stats.rating')
+      .populate<{ blackPlayer: PopulatedUser }>('blackPlayer', 'username stats.rating')
+      .lean<PopulatedGame[]>();
+
+    return games.map((g) => {
+      const isWhite = g.whitePlayer?._id?.toString() === userId;
+      const opponent = isWhite ? g.blackPlayer : g.whitePlayer;
+
+      let outcome: 'WIN' | 'LOSS' | 'DRAW' = 'DRAW';
+
+      if (g.result.winner === Winner.WHITEPLAYER && isWhite) outcome = 'WIN';
+      else if (g.result.winner === Winner.BLACKPLAYER && !isWhite) outcome = 'WIN';
+      else if (g.result.winner !== Winner.UNDECICED) outcome = 'LOSS';
+
+      return {
+        opponent: opponent?.username || 'Unknown',
+        opponentRating: opponent?.stats?.rating || 800,
+        outcome,
+        endedAt: g.endedAt,
+      };
+    });
+  }
+
+  broadcastGameUpdate(game: Game) {
+    const payload = {
+      gameId: game._id,
+      fen: game.currentFen,
+      moves: game.moves,
+      status: game.gameStatus,
+    };
+    this.gameGateway.emitGameUpdate(game._id.toString(), payload);
+  }
+
+  emitGameStart(gameId: string, game: Game) {
+    this.gameGateway.server.to(gameId).emit('gameStarted', game);
+  }
+
+  async generateInviteLink(gameId: string): Promise<{ inviteCode: string; inviteLink: string }> {
+    const inviteCode = randomBytes(6).toString('hex');
+    const game = await this.gameModel.findByIdAndUpdate(gameId, { inviteCode }, { new: true });
+    if (!game) throw new NotFoundException('Game not found');
+
+    return {
+      inviteCode,
+      inviteLink: `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/games/join/${inviteCode}`,
+    };
+  }
+
+  async joinByInviteCode(inviteCode: string, userId: string) {
+    const game = await this.gameModel.findOne({ inviteCode });
+    if (!game) throw new NotFoundException('Invalid invite code');
+
+    const userObjectId = new Types.ObjectId(userId);
+
+    // If white slot empty → fill it
+    if (!game.whitePlayer) {
+      game.whitePlayer = userObjectId;
+    }
+    // Else if black slot empty → fill it
+    else if (!game.blackPlayer) {
+      game.blackPlayer = userObjectId;
+    }
+    // Else game already full
+    else {
+      throw new BadRequestException('Game already has two players');
+    }
+
+    await game.save();
+    return game;
+  }
+}

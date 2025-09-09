@@ -459,10 +459,11 @@ export class GameService {
   // }
 
   async getUserGameHistory(userId: string) {
+    const userObjectId = new Types.ObjectId(userId);
     const games = await this.gameModel
       .find({
-        $or: [{ whitePlayer: userId }, { blackPlayer: userId }],
-        gameStatus: GameStatus.ENDED,
+        $or: [{ whitePlayer: userObjectId }, { blackPlayer: userObjectId }],
+        gameStatus: 'ended',
       })
       .sort({ endedAt: -1 })
       .limit(20)
@@ -483,7 +484,7 @@ export class GameService {
       return {
         opponent: opponent?.username || 'Unknown',
         opponentRating: opponent?.stats?.rating || 800,
-        outcome, // Don't forget to include outcome in the return!
+        outcome,
         endedAt: g.endedAt,
       };
     });
